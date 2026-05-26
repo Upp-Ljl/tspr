@@ -3,9 +3,26 @@
  * Barrel export for all shared library utilities.
  */
 
-// cc.ts — Claude CLI subprocess client
+// cc.ts — CcClient factory (delegates to provider layer)
 export type { CcRunOptions, CcRunResult, CcClient, CcClientConfig, ClaudeModel } from './cc.js';
 export { createCcClient } from './cc.js';
+
+// config.ts — ~/.localsprite/config.json loader + Zod schema
+export type { LocalSpriteConfig } from './config.js';
+export { loadConfig, LocalSpriteConfigSchema } from './config.js';
+
+// providers — CcProvider interface + all providers + factory
+export type { CcProvider, ModelAliasMap } from './providers/index.js';
+export {
+  ClaudeSubprocessProvider,
+  OpenAICompatProvider,
+  MinimaxProvider,
+  createProvider,
+  CLAUDE_SUBPROCESS_DEFAULTS,
+  OPENAI_COMPAT_DEFAULTS,
+  MINIMAX_DEFAULTS,
+  resolveModelId,
+} from './providers/index.js';
 
 // db.ts — SQLite wrapper + schema
 export type { Db, Stmt } from './db.js';
