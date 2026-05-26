@@ -59,10 +59,16 @@ export interface CcClientConfig {
   /** Default subprocess timeout in milliseconds. Default: 60_000. */
   defaultTimeoutMs?: number;
 
-  // ── openai-compat / minimax fields ──
+  // ── Flat openai-compat / minimax fields (legacy DI shape) ──
   baseURL?: string;
   apiKeyEnv?: string;
   modelAliasOverrides?: Partial<Record<ClaudeModel, string>>;
+
+  // ── Nested form (matches loadConfig() output from ~/.localsprite/config.json) ──
+  openaiCompat?: { baseURL?: string; apiKeyEnv?: string };
+  minimax?:      { baseURL?: string; apiKeyEnv?: string };
+  claudeSubprocess?: { binary?: string };
+  modelAlias?: Partial<Record<ClaudeModel, string>>;
 }
 
 // ─────────────────────────────────────────────
@@ -96,28 +102,28 @@ export function createCcClient(config?: CcClientConfig): CcClient {
   switch (provider) {
     case 'claude':
       p = new ClaudeSubprocessProvider({
-        binary: config?.claudeBin,
+        binary: config?.claudeBin ?? config?.claudeSubprocess?.binary,
         extraArgs: config?.claudeArgs,
         defaultTimeoutMs: config?.defaultTimeoutMs,
-        modelAliasOverrides: config?.modelAliasOverrides,
+        modelAliasOverrides: config?.modelAliasOverrides ?? config?.modelAlias,
       });
       break;
 
     case 'openai-compat':
       p = new OpenAICompatProvider({
-        baseURL: config?.baseURL,
-        apiKeyEnv: config?.apiKeyEnv,
+        baseURL:   config?.baseURL   ?? config?.openaiCompat?.baseURL,
+        apiKeyEnv: config?.apiKeyEnv ?? config?.openaiCompat?.apiKeyEnv,
         defaultTimeoutMs: config?.defaultTimeoutMs,
-        modelAliasOverrides: config?.modelAliasOverrides,
+        modelAliasOverrides: config?.modelAliasOverrides ?? config?.modelAlias,
       });
       break;
 
     case 'minimax':
       p = new MinimaxProvider({
-        baseURL: config?.baseURL,
-        apiKeyEnv: config?.apiKeyEnv,
+        baseURL:   config?.baseURL   ?? config?.minimax?.baseURL,
+        apiKeyEnv: config?.apiKeyEnv ?? config?.minimax?.apiKeyEnv,
         defaultTimeoutMs: config?.defaultTimeoutMs,
-        modelAliasOverrides: config?.modelAliasOverrides,
+        modelAliasOverrides: config?.modelAliasOverrides ?? config?.modelAlias,
       });
       break;
 
