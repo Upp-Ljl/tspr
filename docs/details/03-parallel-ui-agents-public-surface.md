@@ -43,6 +43,7 @@ const report: ExplorationReport = await exploreUI({
 | `needLogin` | `boolean` | `false` | If true, run login sequence before starting agents. |
 | `loginFixturePath` | `string \| undefined` | `undefined` | Absolute path to login fixture script. If `needLogin=true` and this is unset, auto-detection is attempted. |
 | `costCapUsd` | `number \| undefined` | `undefined` | Optional hard cost cap in USD. Converted to a `maxCcCalls` estimate; the more restrictive of the two caps is used. |
+| `urlQueryParamBlacklist` | `string[] \| undefined` | `undefined` | Additional URL query parameter names to strip during canonicalization (merged with built-in list). |
 
 ---
 
@@ -51,10 +52,10 @@ const report: ExplorationReport = await exploreUI({
 ```typescript
 interface ExplorationReport {
   runId: string;                    // Unique run identifier, e.g. "run-<uuid>"
-  generatedAt: string;              // ISO 8601 timestamp
+  generatedAt: string;              // UTC ISO 8601 timestamp, always ends with 'Z' (e.g. "2026-05-26T12:00:00.000Z")
   baseUrl: string;                  // Echo of input baseUrl
   stopReason: StopReason;           // Why exploration ended
-  agentCount: number;               // Echo of options.agentCount
+  agentCount: number;               // Echo of options.agentCount (post-clamping)
 
   pages: PageRecord[];
   interactions: InteractionRecord[];
@@ -78,14 +79,18 @@ interface PageRecord {
   title: string;            // Document title at time of capture
   domSnapshotPath: string;  // Absolute path to truncated DOM HTML file
   screenshotPath: string;   // Absolute path to full-page PNG
-  depth: number;            // Navigation hops from baseUrl (baseUrl itself = 0)
+  domHash: string;          // Structural DOM fingerprint (16-char hex); unique key per distinct page structure
+  depth: number;            // Navigation hops from baseUrl (baseUrl itself = 0).
+                            // HTTP redirects during a single navigation count as 0 additional hops.
+                            // Client-side route changes (URL changes) each increment depth by 1.
 }
 
 interface InteractionRecord {
   pageUrl: string;          // Page on which interaction was discovered
   hint: string;             // Human-readable description, e.g. "click 'Add to cart' button"
   selector?: string;        // Optional CSS selector if available
-  discoveredBy: string;     // Agent identifier, e.g. "agent-1"
+  discoveredBy: string;     // Agent identifier. Format: "agent-N" where N is a 1-indexed integer in [1, agentCount].
+                            // The same agent instance uses the same identifier for the full run duration.
 }
 
 interface ExceptionRecord {
@@ -111,7 +116,10 @@ interface CoverageSummary {
   scenarios_generated: number;
   cc_calls_used: number;
   elapsed_ms: number;
-  stop_reason: StopReason;  // Duplicate of top-level for convenience
+  stop_reason: StopReason;      // Duplicate of top-level for convenience
+  estimated_cost_usd: number;   // Module's best-effort estimate of run cost in USD, computed from
+                                 // cc_calls_used × per-call rate. Uses the same rate as costCapUsd conversion.
+                                 // Not a billing guarantee; for observability only.
 }
 
 interface UnexploredTask {
@@ -133,6 +141,8 @@ When `exploreUI` resolves, `report.coverage_summary` is always present and `repo
 
 ### B-3-3: Unexplored tasks listed
 If exploration ends before the frontier is empty (stop reason: `time_cap`, `page_cap`, `cost_cap`, or `all_agents_dead`), `report.unexplored` contains all tasks that were queued but not processed. If exploration ends via `convergence`, `report.unexplored` is an empty array `[]`.
+
+An `UnexploredTask` represents a queued navigation or interaction unit that was not executed. A URL appearing in `report.pages` was at minimum loaded; its interactions may still appear in `unexplored` if not all were processed (i.e., a URL can appear in both `report.pages` and `report.unexplored`). A URL present in `unexplored` but absent from `report.pages` was never loaded.
 
 ### B-3-4: timeBudgetMs enforced across all stop conditions
 Regardless of any other stop condition, `report.coverage_summary.elapsed_ms` is always ≤ `timeBudgetMs + 30_000`. This contract holds even if the synthesis pass is running when the time cap triggers — synthesis has its own 60s internal deadline counted inside the +30s margin.
@@ -169,6 +179,40 @@ If both `costCapUsd` and `maxCcCalls` are provided, both caps are enforced. The 
 
 ### B-3-15: projectPath/.localsprite/frontend_test_plan.json written on resolve
 When `exploreUI` resolves, the full `ExplorationReport` is also written as JSON to `{projectPath}/.localsprite/frontend_test_plan.json`. The file is created (or overwritten) atomically (write to temp file then rename). If the write fails, `exploreUI` still resolves — the return value is the source of truth.
+
+### B-3-16: estimated_cost_usd is always present and non-negative
+`report.coverage_summary.estimated_cost_usd` is always a finite non-negative number when `exploreUI` resolves. It reflects the module's best-effort USD estimate computed from `cc_calls_used` using the same per-call rate as the `costCapUsd` conversion formula. When `costCapUsd` is set, `estimated_cost_usd ≤ costCapUsd` under normal conditions (minor overshoot by at most one call's cost is permitted due to race conditions at cap boundary).
+
+### B-3-17: Login fixture contract
+When `needLogin=true` and `loginFixturePath` is provided, the file at that path must be a valid ES module (`.mjs` / `.js` with ESM syntax) that exports a default async function with the signature:
+
+```typescript
+export default async function login(page: Page): Promise<void>
+```
+
+Where `Page` is a Playwright `Page` object. The function must return (resolve) on successful login. If it throws, `exploreUI` rejects with `ExplorationError('LOGIN_FAILED', { detail: err.message })`.
+
+If `loginFixturePath` points to a non-existent file, `exploreUI` rejects with `ExplorationError('LOGIN_FAILED', { detail: 'fixture file not found' })`.
+
+Auto-detection (when `loginFixturePath` is unset and `needLogin=true`) checks the following paths relative to `projectPath` in order:
+1. `tests/fixtures/auth.ts` / `tests/fixtures/auth.mjs`
+2. `e2e/fixtures/login.ts` / `e2e/fixtures/login.mjs`
+3. `.localsprite/login.ts` / `.localsprite/login.mjs`
+
+If none are found, a heuristic login attempt is made (form-fill). If all heuristics fail, `exploreUI` rejects with `ExplorationError('LOGIN_FAILED')`.
+
+### B-3-18: Synthesis reserved slot and maxCcCalls interaction
+The synthesis pass (sonnet call) does NOT count toward the `maxCcCalls` counter. Exploration (haiku) calls are capped strictly at `maxCcCalls`. Synthesis always runs after exploration ends, regardless of whether `maxCcCalls` was exhausted. The only way synthesis is skipped is if it times out or throws (see B-3-8). This means callers can safely set `maxCcCalls=1` and still receive a synthesis attempt.
+
+Rationale: synthesis is a fixed-cost pass (1 call), while `maxCcCalls` governs the variable per-page haiku calls. Counting synthesis in the cap would make `maxCcCalls` semantically confusing.
+
+Note: `coverage_summary.cc_calls_used` reflects only exploration calls. `estimated_cost_usd` includes both exploration and synthesis cost.
+
+### B-3-19: generatedAt timezone
+`report.generatedAt` is always a UTC timestamp formatted as `YYYY-MM-DDTHH:mm:ss.sssZ` (Z suffix). Local offsets are never used. Callers may assert `report.generatedAt.endsWith('Z')` and `!isNaN(Date.parse(report.generatedAt))`.
+
+### B-3-20: discoveredBy agent identifier format
+`InteractionRecord.discoveredBy` is always of the form `"agent-N"` where `N` is a 1-indexed integer in the range `[1, agentCount]`. The same agent instance uses the same identifier throughout the full run. After agentCount clamping, N values are in `[1, clampedAgentCount]`.
 
 ---
 

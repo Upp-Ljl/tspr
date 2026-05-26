@@ -263,7 +263,8 @@ Evaluated in a coordinator loop running every 500ms alongside agents:
 1. convergence:     frontier.size() == 0 AND all agentStatuses == 'idle' for 30s
 2. time_cap:        Date.now() - startedAt >= options.timeBudgetMs          (default 5 * 60 * 1000)
 3. page_cap:        state.visitedUrls.size >= options.maxPages               (default 30)
-4. cost_cap:        ccCallCount >= options.maxCcCalls                        (default 50)
+4. cost_cap:        explorationCcCallCount >= options.maxCcCalls             (default 50)
+                    NOTE: only exploration (haiku) calls count; synthesis call is excluded from this counter.
 5. all_agents_dead: all agentStatuses == 'dead'
 ```
 
@@ -322,6 +323,7 @@ Written to `projectPath/.localsprite/frontend_test_plan.json`:
       "domSnapshotPath": "~/.localsprite/runs/<runId>/ui-exploration/snapshots/a3f1b2c4.html",
       "screenshotPath": "~/.localsprite/runs/<runId>/ui-exploration/screenshots/a3f1b2c4.png",
       "depth": 1
+      // depth: HTTP redirects during navigation = 0 additional hops; client-side route changes = +1 each
     }
   ],
 
@@ -368,9 +370,10 @@ Written to `projectPath/.localsprite/frontend_test_plan.json`:
     "unique_interactions_tried": 34,
     "exceptions_found": 2,
     "scenarios_generated": 8,
-    "cc_calls_used": 42,
+    "cc_calls_used": 42,           // exploration (haiku) calls only; synthesis excluded
     "elapsed_ms": 287430,
-    "stop_reason": "convergence"
+    "stop_reason": "convergence",
+    "estimated_cost_usd": 0.01875  // cc_calls_used * 0.000375 + 0.003 (synthesis fixed cost)
   },
 
   "unexplored": [
@@ -441,6 +444,9 @@ At default settings (3 agents, 5 min, 30 pages, 50 cc calls):
 | **Total** | | | **~$0.016 per run** |
 
 Haiku pricing basis: $0.25/1M input tokens, $1.25/1M output tokens; estimated 500 input + 200 output tokens per call ≈ $0.000375 per call. Conservative estimate used above.
+
+`coverage_summary.cc_calls_used` counts only exploration (haiku) calls; synthesis is a separate fixed call.
+`coverage_summary.estimated_cost_usd` = `cc_calls_used * 0.000375 + 0.003` (haiku exploration + sonnet synthesis fixed cost).
 
 ---
 
