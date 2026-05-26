@@ -12,7 +12,7 @@ beforeAll(async () => {
   try {
     const { execSync } = await import('child_process');
     execSync('docker info', { stdio: 'pipe', timeout: 5000 });
-    execSync('docker image inspect localsprite/sandbox-node:24', { stdio: 'pipe', timeout: 5000 });
+    execSync('docker image inspect tspr/sandbox-node:24', { stdio: 'pipe', timeout: 5000 });
   } catch {
     dockerAvailable = false;
     console.warn('[dispose.test] Docker or sandbox image not available — skipping');
@@ -101,10 +101,10 @@ describe('dispose', () => {
     expect(inspect).toBeNull();
   }, { timeout: 30_000 });
 
-  it('TTL-ENV-VAR-DEFAULT: LOCALSPRITE_SANDBOX_TTL_MS env var sets default TTL (B-2-15, §6)', async () => {
+  it('TTL-ENV-VAR-DEFAULT: TSPR_SANDBOX_TTL_MS env var sets default TTL (B-2-15, §6)', async () => {
     if (!dockerAvailable) return;
-    const originalTtl = process.env.LOCALSPRITE_SANDBOX_TTL_MS;
-    process.env.LOCALSPRITE_SANDBOX_TTL_MS = '2000';
+    const originalTtl = process.env.TSPR_SANDBOX_TTL_MS;
+    process.env.TSPR_SANDBOX_TTL_MS = '2000';
 
     try {
       const handle = await createSandbox({
@@ -117,9 +117,9 @@ describe('dispose', () => {
       expect(handle.status).toBe('disposed');
     } finally {
       if (originalTtl === undefined) {
-        delete process.env.LOCALSPRITE_SANDBOX_TTL_MS;
+        delete process.env.TSPR_SANDBOX_TTL_MS;
       } else {
-        process.env.LOCALSPRITE_SANDBOX_TTL_MS = originalTtl;
+        process.env.TSPR_SANDBOX_TTL_MS = originalTtl;
       }
     }
   }, { timeout: 30_000 });

@@ -55,7 +55,7 @@ export async function checkDockerAlive(docker: Dockerode): Promise<void> {
  */
 export async function checkAndEnsureImage(docker: Dockerode): Promise<void> {
   const imageName =
-    process.env.LOCALSPRITE_SANDBOX_IMAGE ?? 'localsprite/sandbox-node:24';
+    process.env.TSPR_SANDBOX_IMAGE ?? 'tspr/sandbox-node:24';
 
   if (imageDigestCache.has(imageName)) {
     return;

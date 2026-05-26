@@ -1,5 +1,5 @@
 /**
- * Tests for Tool 6: localsprite_generate_code_and_execute
+ * Tests for Tool 6: tspr_generate_code_and_execute
  * Covers: B-6-1 through B-6-14, B-A-5, B-A-6, B-A-7, B-V-3
  * Docker is mocked via DockerSandbox interface.
  */
@@ -59,8 +59,8 @@ function makeSandboxWith(passed: number, failed: number, skipped: number = 0): D
 
 function makeProjectWithPlan(scenarios: Array<{ id: string; title?: string }>): TestProject {
   const p = createTestProject();
-  const localspriteDir = path.join(p.projectPath, '.localsprite');
-  fs.mkdirSync(localspriteDir, { recursive: true });
+  const tsprDir = path.join(p.projectPath, '.tspr');
+  fs.mkdirSync(tsprDir, { recursive: true });
   const plan = {
     scenarios: scenarios.map((s) => ({
       id: s.id,
@@ -72,11 +72,11 @@ function makeProjectWithPlan(scenarios: Array<{ id: string; title?: string }>): 
     routesDiscovered: scenarios.length,
     warnings: [],
   };
-  fs.writeFileSync(path.join(localspriteDir, 'backend_test_plan.json'), JSON.stringify(plan), 'utf-8');
+  fs.writeFileSync(path.join(tsprDir, 'backend_test_plan.json'), JSON.stringify(plan), 'utf-8');
   return p;
 }
 
-describe('localsprite_generate_code_and_execute', () => {
+describe('tspr_generate_code_and_execute', () => {
   const projects: TestProject[] = [];
 
   afterEach(() => {
@@ -313,7 +313,7 @@ describe('localsprite_generate_code_and_execute', () => {
       ctx,
       makeSandboxWith(1, 0),
     );
-    const generatedDir = path.join(p.projectPath, '.localsprite', 'generated_tests');
+    const generatedDir = path.join(p.projectPath, '.tspr', 'generated_tests');
     expect(fs.existsSync(generatedDir)).toBe(true);
     const files = fs.readdirSync(generatedDir);
     const hasSpecFile = files.some((f) => f.endsWith('.spec.ts'));

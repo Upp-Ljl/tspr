@@ -23,7 +23,7 @@ export interface CreateTestProjectOptions {
 }
 
 export function createTestProject(opts: CreateTestProjectOptions = {}): TestProject {
-  const tmpDir = path.join(os.tmpdir(), `localsprite-test-${crypto.randomUUID()}`);
+  const tmpDir = path.join(os.tmpdir(), `tspr-test-${crypto.randomUUID()}`);
   fs.mkdirSync(tmpDir, { recursive: true });
 
   if (!opts.noPackageJson) {
@@ -176,7 +176,7 @@ export function makeDefaultConfig(overrides?: Partial<ResolvedConfig>): Resolved
     planModel: 'claude-haiku-4-5',
     concurrency: 1,
     logLevel: 'info',
-    configPath: path.join(os.homedir(), '.localsprite', 'config.json'),
+    configPath: path.join(os.homedir(), '.tspr', 'config.json'),
     dockerImage: 'node:24-alpine',
     browserPoolSize: 3,
     executeTimeoutMs: 300_000,

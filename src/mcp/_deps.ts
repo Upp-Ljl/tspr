@@ -37,13 +37,13 @@ export interface Logger {
   debug(msg: string, ctx?: object): void;
 }
 
-export class LocalSpriteError extends Error {
+export class TsprError extends Error {
   code: string;
   override cause?: unknown;
 
   constructor(code: string, message: string, cause?: unknown) {
     super(message);
-    this.name = 'LocalSpriteError';
+    this.name = 'TsprError';
     this.code = code;
     this.cause = cause;
   }

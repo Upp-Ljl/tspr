@@ -2,9 +2,9 @@
  * src/report/testspriteCompat.ts
  *
  * Writes a TestSprite-compatible test_results.json to:
- *   {projectPath}/.localsprite/test_results.json
+ *   {projectPath}/.tspr/test_results.json
  *
- * Triggered by LOCALSPRITE_EMIT_TESTSPRITE_COMPAT=1 env var, or emitTestSpriteCompat: true option.
+ * Triggered by TSPR_EMIT_TESTSPRITE_COMPAT=1 env var, or emitTestSpriteCompat: true option.
  * This is a side effect of buildReport, not the primary MCP return value.
  *
  * Schema mapping per spec §9.
@@ -87,7 +87,7 @@ export async function writeTestSpriteCompat(
   report: AutoPatchReport,
   projectPath: string,
 ): Promise<void> {
-  const dir = path.join(projectPath, ".localsprite");
+  const dir = path.join(projectPath, ".tspr");
   const outputPath = path.join(dir, "test_results.json");
 
   await fs.mkdir(dir, { recursive: true });
@@ -100,6 +100,6 @@ export function shouldEmitTestSpriteCompat(
   optionFlag?: boolean,
 ): boolean {
   if (optionFlag === true) return true;
-  const env = envVar ?? process.env["LOCALSPRITE_EMIT_TESTSPRITE_COMPAT"];
+  const env = envVar ?? process.env["TSPR_EMIT_TESTSPRITE_COMPAT"];
   return env === "1" || env === "true";
 }

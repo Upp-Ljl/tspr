@@ -1,5 +1,5 @@
 /**
- * Tool 8: localsprite_rerun_tests
+ * Tool 8: tspr_rerun_tests
  *
  * Reruns the tests from the most recent generate_code_and_execute call using
  * existing generated .spec.ts files — does not regenerate code.
@@ -30,7 +30,7 @@ async function rerunTestsHandler(args: unknown, ctx: ServerContext): Promise<Too
     const insert = ctx.db.prepare(
       `INSERT INTO runs (tool, params_hash, started_at) VALUES (?, ?, ?)`,
     );
-    const result = insert.run('localsprite_rerun_tests', paramsHash, startedAt);
+    const result = insert.run('tspr_rerun_tests', paramsHash, startedAt);
     runId = result.lastInsertRowid;
   } catch (err) {
     ctx.logger.warn('Failed to insert run row', { err });
@@ -55,7 +55,7 @@ async function rerunTestsHandler(args: unknown, ctx: ServerContext): Promise<Too
     // Look up most recent generate_code_and_execute run for this projectPath.
     // Primary indicator: test_results.json on disk (written by generate_code_and_execute).
     // Secondary: runs table in SQLite (may not have the row in mock/test environments).
-    const testResultsPath = path.join(projectPath, '.localsprite', 'test_results.json');
+    const testResultsPath = path.join(projectPath, '.tspr', 'test_results.json');
     let priorRunExists = fs.existsSync(testResultsPath);
 
     if (!priorRunExists) {
@@ -65,13 +65,13 @@ async function rerunTestsHandler(args: unknown, ctx: ServerContext): Promise<Too
         {
           code: 'ERR_NO_PRIOR_RUN',
           projectPath,
-          suggestion: 'Run localsprite_generate_code_and_execute first for this project.',
+          suggestion: 'Run tspr_generate_code_and_execute first for this project.',
         },
       );
     }
 
     // Check generated tests exist
-    const generatedTestsDir = path.join(projectPath, '.localsprite', 'generated_tests');
+    const generatedTestsDir = path.join(projectPath, '.tspr', 'generated_tests');
     let hasSpecFiles = false;
     try {
       const files = fs.readdirSync(generatedTestsDir);
@@ -85,7 +85,7 @@ async function rerunTestsHandler(args: unknown, ctx: ServerContext): Promise<Too
         {
           code: 'ERR_GENERATED_TESTS_MISSING',
           projectPath,
-          suggestion: 'Re-run localsprite_generate_code_and_execute to regenerate test files.',
+          suggestion: 'Re-run tspr_generate_code_and_execute to regenerate test files.',
         },
       );
     }
@@ -95,7 +95,7 @@ async function rerunTestsHandler(args: unknown, ctx: ServerContext): Promise<Too
     let projectName = path.basename(projectPath);
     try {
       const testResults = JSON.parse(
-        fs.readFileSync(path.join(projectPath, '.localsprite', 'test_results.json'), 'utf-8'),
+        fs.readFileSync(path.join(projectPath, '.tspr', 'test_results.json'), 'utf-8'),
       ) as { projectName?: string };
       if (testResults.projectName) projectName = testResults.projectName;
     } catch { /* ignore */ }
@@ -130,7 +130,7 @@ async function rerunTestsHandler(args: unknown, ctx: ServerContext): Promise<Too
 }
 
 export const rerunTestsTool: ToolDefinition = {
-  name: 'localsprite_rerun_tests',
+  name: 'tspr_rerun_tests',
   description:
     'Reruns the tests from the most recent generate_code_and_execute call using existing generated .spec.ts files — no code regeneration.',
   inputSchema: rerunTestsInputSchema,

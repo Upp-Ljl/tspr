@@ -15,7 +15,7 @@ RUN npm install -g vitest@latest @playwright/test@latest
 # Install Playwright browsers
 RUN npx playwright install chromium --with-deps || true
 
-RUN mkdir -p /work /tmp/localsprite-out
+RUN mkdir -p /work /tmp/tspr-out
 WORKDIR /work
 
-LABEL localsprite.base-image="node24-slim"
+LABEL tspr.base-image="node24-slim"

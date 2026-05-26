@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="localsprite/sandbox-node:24"
+IMAGE="tspr/sandbox-node:24"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOCKERFILE="$REPO_ROOT/docker/Dockerfile.sandbox"
@@ -16,7 +16,7 @@ if [ ! -f "$DOCKERFILE" ]; then
   exit 1
 fi
 
-LABEL_KEY="localsprite.dockerfile.sha256"
+LABEL_KEY="tspr.dockerfile.sha256"
 
 # Compute SHA256 of Dockerfile (cross-platform)
 if command -v sha256sum &>/dev/null; then

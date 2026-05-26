@@ -1,5 +1,5 @@
 /**
- * Tests for Tool 2: localsprite_generate_code_summary
+ * Tests for Tool 2: tspr_generate_code_summary
  * Covers: B-2-1 through B-2-6, B-A-1
  */
 import { describe, it, expect, afterEach } from 'vitest';
@@ -24,7 +24,7 @@ const VALID_SUMMARY_RESPONSE = JSON.stringify({
   testingSetup: 'vitest',
 });
 
-describe('localsprite_generate_code_summary', () => {
+describe('tspr_generate_code_summary', () => {
   const projects: TestProject[] = [];
 
   afterEach(() => {

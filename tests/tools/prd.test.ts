@@ -1,5 +1,5 @@
 /**
- * Tests for Tool 3: localsprite_generate_standardized_prd
+ * Tests for Tool 3: tspr_generate_standardized_prd
  * Covers: B-3-1 through B-3-5, B-A-2, B-V-0
  */
 import { describe, it, expect, afterEach } from 'vitest';
@@ -33,7 +33,7 @@ const VALID_PRD_RESPONSE = JSON.stringify({
   technicalRequirements: ['Node.js 24', 'TypeScript'],
 });
 
-describe('localsprite_generate_standardized_prd', () => {
+describe('tspr_generate_standardized_prd', () => {
   const projects: TestProject[] = [];
 
   afterEach(() => {
@@ -48,9 +48,9 @@ describe('localsprite_generate_standardized_prd', () => {
 
   function mkProjectWithCodeSummary(): TestProject {
     const p = mkProject();
-    const localspriteDir = path.join(p.projectPath, '.localsprite');
-    fs.mkdirSync(localspriteDir, { recursive: true });
-    fs.writeFileSync(path.join(localspriteDir, 'code_summary.json'), VALID_CODE_SUMMARY, 'utf-8');
+    const tsprDir = path.join(p.projectPath, '.tspr');
+    fs.mkdirSync(tsprDir, { recursive: true });
+    fs.writeFileSync(path.join(tsprDir, 'code_summary.json'), VALID_CODE_SUMMARY, 'utf-8');
     return p;
   }
 

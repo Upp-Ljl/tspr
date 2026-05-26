@@ -1,5 +1,5 @@
 /**
- * Tests for Tool 4: localsprite_generate_frontend_test_plan
+ * Tests for Tool 4: tspr_generate_frontend_test_plan
  * Covers: B-4-1, B-4-7, B-4-8 (session lookup), input schema validation
  */
 import { describe, it, expect, afterEach } from 'vitest';
@@ -15,7 +15,7 @@ import {
 } from '../mcp/helpers.js';
 import type { Stmt } from '../../src/mcp/_deps.js';
 
-describe('localsprite_generate_frontend_test_plan', () => {
+describe('tspr_generate_frontend_test_plan', () => {
   const projects: TestProject[] = [];
 
   afterEach(() => {

@@ -1,5 +1,5 @@
 /**
- * Tests for Tool 7: localsprite_open_test_result_dashboard
+ * Tests for Tool 7: tspr_open_test_result_dashboard
  * Covers: B-7-1 through B-7-5, B-A-8, B-V-4
  */
 import { describe, it, expect, afterEach } from 'vitest';
@@ -12,7 +12,7 @@ import {
   makeMockDb,
 } from '../mcp/helpers.js';
 
-describe('localsprite_open_test_result_dashboard', () => {
+describe('tspr_open_test_result_dashboard', () => {
   // ─── B-7-1/B-V-4: empty input {} returns ok ───────────────────────────────
   it('DASH-001: empty input {} returns status=ok (B-7-1, B-V-4)', async () => {
     const ctx = makeContext();
@@ -59,7 +59,7 @@ describe('localsprite_open_test_result_dashboard', () => {
   it('ARTIFACT-008: dashboard.html exists and has non-zero size after call', async () => {
     const ctx = makeContext();
     await dashboardTool.handler({}, ctx);
-    const dashboardPath = path.join(os.homedir(), '.localsprite', 'dashboard.html');
+    const dashboardPath = path.join(os.homedir(), '.tspr', 'dashboard.html');
     expect(fs.existsSync(dashboardPath)).toBe(true);
     const stat = fs.statSync(dashboardPath);
     expect(stat.size).toBeGreaterThan(0);

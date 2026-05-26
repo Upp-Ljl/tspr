@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  LocalSpriteError,
+  TsprError,
   SandboxError,
   CcError,
   ReportError,
@@ -15,10 +15,10 @@ import {
   JSONRPC_INTERNAL_ERROR,
 } from '../../src/lib/errors.js';
 
-describe('LocalSpriteError', () => {
+describe('TsprError', () => {
   it('stores code, message, cause, and data', () => {
     const cause = new Error('root cause');
-    const err = new LocalSpriteError('ERR_TEST', 'test message', {
+    const err = new TsprError('ERR_TEST', 'test message', {
       cause,
       data: { key: 'value' },
     });
@@ -30,27 +30,27 @@ describe('LocalSpriteError', () => {
   });
 
   it('is an instance of Error', () => {
-    const err = new LocalSpriteError('ERR_TEST', 'msg');
+    const err = new TsprError('ERR_TEST', 'msg');
     expect(err).toBeInstanceOf(Error);
-    expect(err).toBeInstanceOf(LocalSpriteError);
+    expect(err).toBeInstanceOf(TsprError);
   });
 
-  it('name is LocalSpriteError', () => {
-    const err = new LocalSpriteError('ERR_TEST', 'msg');
-    expect(err.name).toBe('LocalSpriteError');
+  it('name is TsprError', () => {
+    const err = new TsprError('ERR_TEST', 'msg');
+    expect(err.name).toBe('TsprError');
   });
 
   it('optional fields default to undefined', () => {
-    const err = new LocalSpriteError('ERR_X', 'x');
+    const err = new TsprError('ERR_X', 'x');
     expect(err.cause).toBeUndefined();
     expect(err.data).toBeUndefined();
   });
 });
 
 describe('SandboxError', () => {
-  it('is an instance of LocalSpriteError', () => {
+  it('is an instance of TsprError', () => {
     const err = new SandboxError('ERR_DOCKER_UNAVAILABLE', 'docker not running');
-    expect(err).toBeInstanceOf(LocalSpriteError);
+    expect(err).toBeInstanceOf(TsprError);
     expect(err).toBeInstanceOf(SandboxError);
   });
 
@@ -61,9 +61,9 @@ describe('SandboxError', () => {
 });
 
 describe('CcError', () => {
-  it('is an instance of LocalSpriteError', () => {
+  it('is an instance of TsprError', () => {
     const err = new CcError('ERR_CC_FAILED', 'claude failed');
-    expect(err).toBeInstanceOf(LocalSpriteError);
+    expect(err).toBeInstanceOf(TsprError);
     expect(err).toBeInstanceOf(CcError);
   });
 
@@ -74,9 +74,9 @@ describe('CcError', () => {
 });
 
 describe('ReportError', () => {
-  it('is an instance of LocalSpriteError', () => {
+  it('is an instance of TsprError', () => {
     const err = new ReportError('REPORT_SERIALIZATION_FAILED', 'circular ref');
-    expect(err).toBeInstanceOf(LocalSpriteError);
+    expect(err).toBeInstanceOf(TsprError);
     expect(err).toBeInstanceOf(ReportError);
   });
 });
@@ -103,14 +103,14 @@ describe('ErrCode', () => {
 
 describe('toMcpError', () => {
   it('ERR_INVALID_PORT maps to -32602', () => {
-    const err = new LocalSpriteError(ErrCode.ERR_INVALID_PORT, 'bad port');
+    const err = new TsprError(ErrCode.ERR_INVALID_PORT, 'bad port');
     const mcp = toMcpError(err);
     expect(mcp.code).toBe(JSONRPC_INVALID_PARAMS);
     expect(mcp.message).toBe(ErrCode.ERR_INVALID_PORT);
   });
 
   it('ERR_INVALID_PARAMS maps to -32602', () => {
-    const err = new LocalSpriteError(ErrCode.ERR_INVALID_PARAMS, 'missing param');
+    const err = new TsprError(ErrCode.ERR_INVALID_PARAMS, 'missing param');
     const mcp = toMcpError(err);
     expect(mcp.code).toBe(JSONRPC_INVALID_PARAMS);
   });
@@ -128,7 +128,7 @@ describe('toMcpError', () => {
   });
 
   it('data.code equals the error code', () => {
-    const err = new LocalSpriteError(ErrCode.ERR_PROJECT_NOT_FOUND, 'not found');
+    const err = new TsprError(ErrCode.ERR_PROJECT_NOT_FOUND, 'not found');
     const mcp = toMcpError(err);
     expect((mcp.data as Record<string, unknown>)?.['code']).toBe(ErrCode.ERR_PROJECT_NOT_FOUND);
   });

@@ -2,7 +2,7 @@
 
 > SPEC-SPLIT artifact — public surface (blackbox-readable, implementation-free)
 > Module: `src/ui-explore/`
-> MCP tool: `localsprite_generate_frontend_test_plan` (tool 4, frontend path)
+> MCP tool: `tspr_generate_frontend_test_plan` (tool 4, frontend path)
 > Date: 2026-05-26
 > Status: draft
 
@@ -17,7 +17,7 @@ frontier implementation, dedup algorithms, or file layout details.
 ## 1. Entry Point
 
 ```typescript
-import { exploreUI } from 'localsprite/ui-explore';
+import { exploreUI } from 'tspr/ui-explore';
 
 const report: ExplorationReport = await exploreUI({
   baseUrl: string,       // REQUIRED. Absolute URL of running app, e.g. "http://localhost:3000"
@@ -177,8 +177,8 @@ When `exploreUI` resolves, every path referenced in `report.pages[*].domSnapshot
 ### B-3-14: costCapUsd and maxCcCalls are independent, both enforced
 If both `costCapUsd` and `maxCcCalls` are provided, both caps are enforced. The effective limit is whichever is more restrictive. The cc call counter increments on every AI call regardless of whether it was for interaction suggestion or synthesis.
 
-### B-3-15: projectPath/.localsprite/frontend_test_plan.json written on resolve
-When `exploreUI` resolves, the full `ExplorationReport` is also written as JSON to `{projectPath}/.localsprite/frontend_test_plan.json`. The file is created (or overwritten) atomically (write to temp file then rename). If the write fails, `exploreUI` still resolves — the return value is the source of truth.
+### B-3-15: projectPath/.tspr/frontend_test_plan.json written on resolve
+When `exploreUI` resolves, the full `ExplorationReport` is also written as JSON to `{projectPath}/.tspr/frontend_test_plan.json`. The file is created (or overwritten) atomically (write to temp file then rename). If the write fails, `exploreUI` still resolves — the return value is the source of truth.
 
 ### B-3-16: estimated_cost_usd is always present and non-negative
 `report.coverage_summary.estimated_cost_usd` is always a finite non-negative number when `exploreUI` resolves. It reflects the module's best-effort USD estimate computed from `cc_calls_used` using the same per-call rate as the `costCapUsd` conversion formula. When `costCapUsd` is set, `estimated_cost_usd ≤ costCapUsd` under normal conditions (minor overshoot by at most one call's cost is permitted due to race conditions at cap boundary).
@@ -197,7 +197,7 @@ If `loginFixturePath` points to a non-existent file, `exploreUI` rejects with `E
 Auto-detection (when `loginFixturePath` is unset and `needLogin=true`) checks the following paths relative to `projectPath` in order:
 1. `tests/fixtures/auth.ts` / `tests/fixtures/auth.mjs`
 2. `e2e/fixtures/login.ts` / `e2e/fixtures/login.mjs`
-3. `.localsprite/login.ts` / `.localsprite/login.mjs`
+3. `.tspr/login.ts` / `.tspr/login.mjs`
 
 If none are found, a heuristic login attempt is made (form-fill). If all heuristics fail, `exploreUI` rejects with `ExplorationError('LOGIN_FAILED')`.
 
@@ -265,7 +265,7 @@ Rough estimates at default settings (`agentCount=3`, `timeBudgetMs=300_000`, `ma
 | 1 synthesis call (sonnet) | ~$0.003 |
 | **Total per run** | **~$0.02** |
 
-Cost is billed to the `claude` CLI process running on the host machine, subject to the user's Claude plan. `localsprite` does not handle billing and does not add markup.
+Cost is billed to the `claude` CLI process running on the host machine, subject to the user's Claude plan. `tspr` does not handle billing and does not add markup.
 
 If `costCapUsd` is set and is lower than the above estimate, exploration will stop earlier, producing fewer scenarios.
 
@@ -273,7 +273,7 @@ If `costCapUsd` is set and is lower than the above estimate, exploration will st
 
 ## 8. MCP Tool Binding
 
-`exploreUI` is invoked by the `localsprite_generate_frontend_test_plan` MCP tool handler. The MCP tool's input parameters map to `exploreUI` arguments as follows:
+`exploreUI` is invoked by the `tspr_generate_frontend_test_plan` MCP tool handler. The MCP tool's input parameters map to `exploreUI` arguments as follows:
 
 | MCP param | exploreUI arg |
 |---|---|

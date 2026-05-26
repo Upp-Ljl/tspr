@@ -11,7 +11,7 @@ let dockerAvailable = true;
 beforeAll(async () => {
   try {
     execSync('docker info', { stdio: 'pipe', timeout: 5000 });
-    execSync('docker image inspect localsprite/sandbox-node:24', { stdio: 'pipe', timeout: 5000 });
+    execSync('docker image inspect tspr/sandbox-node:24', { stdio: 'pipe', timeout: 5000 });
   } catch {
     dockerAvailable = false;
     console.warn('[concurrent.test] Docker or sandbox image not available — skipping');
@@ -27,8 +27,8 @@ describe('concurrent sandboxes', () => {
     if (!dockerAvailable) return;
 
     // Ensure max concurrent is at least 3
-    const originalMax = process.env.LOCALSPRITE_SANDBOX_MAX_CONCURRENT;
-    process.env.LOCALSPRITE_SANDBOX_MAX_CONCURRENT = '3';
+    const originalMax = process.env.TSPR_SANDBOX_MAX_CONCURRENT;
+    process.env.TSPR_SANDBOX_MAX_CONCURRENT = '3';
 
     try {
       const handles = await Promise.all([
@@ -55,9 +55,9 @@ describe('concurrent sandboxes', () => {
       }
     } finally {
       if (originalMax === undefined) {
-        delete process.env.LOCALSPRITE_SANDBOX_MAX_CONCURRENT;
+        delete process.env.TSPR_SANDBOX_MAX_CONCURRENT;
       } else {
-        process.env.LOCALSPRITE_SANDBOX_MAX_CONCURRENT = originalMax;
+        process.env.TSPR_SANDBOX_MAX_CONCURRENT = originalMax;
       }
     }
   }, { timeout: 120_000 });

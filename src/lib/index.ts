@@ -7,9 +7,9 @@
 export type { CcRunOptions, CcRunResult, CcClient, CcClientConfig, ClaudeModel } from './cc.js';
 export { createCcClient } from './cc.js';
 
-// config.ts — ~/.localsprite/config.json loader + Zod schema
-export type { LocalSpriteConfig } from './config.js';
-export { loadConfig, LocalSpriteConfigSchema } from './config.js';
+// config.ts — ~/.tspr/config.json loader + Zod schema
+export type { TsprConfig } from './config.js';
+export { loadConfig, TsprConfigSchema } from './config.js';
 
 // providers — CcProvider interface + all providers + factory
 export type { CcProvider, ModelAliasMap } from './providers/index.js';
@@ -34,7 +34,7 @@ export { createLogger } from './log.js';
 
 // errors.ts — error classes + MCP mapping
 export {
-  LocalSpriteError,
+  TsprError,
   SandboxError,
   CcError,
   ReportError,
@@ -51,7 +51,7 @@ export type { ErrCodeValue, McpError } from './errors.js';
 
 // paths.ts — filesystem helpers
 export {
-  localspriteHome,
+  tsprHome,
   runsDir,
   dbPath,
   configPath,

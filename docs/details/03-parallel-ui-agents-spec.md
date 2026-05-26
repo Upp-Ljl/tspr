@@ -2,7 +2,7 @@
 
 > SPEC-SPLIT artifact — dev spec (implementation-facing)
 > Module: `src/ui-explore/`
-> MCP tool: `localsprite_generate_frontend_test_plan` (tool 4, frontend path)
+> MCP tool: `tspr_generate_frontend_test_plan` (tool 4, frontend path)
 > Date: 2026-05-26
 > Status: draft
 
@@ -10,7 +10,7 @@
 
 ## 0. Goal
 
-Drive N (default 3, range 1–8) headless Chromium agents in parallel across a running web app. Each agent behaves like a real user: it navigates pages, tries interactions, observes errors, and hands off discoveries to sibling agents. After convergence or timeout, a synthesis pass (sonnet) produces structured test scenarios. The final artifact is `frontend_test_plan.json` plus raw screenshots and DOM snapshots in `~/.localsprite/runs/<runId>/ui-exploration/`.
+Drive N (default 3, range 1–8) headless Chromium agents in parallel across a running web app. Each agent behaves like a real user: it navigates pages, tries interactions, observes errors, and hands off discoveries to sibling agents. After convergence or timeout, a synthesis pass (sonnet) produces structured test scenarios. The final artifact is `frontend_test_plan.json` plus raw screenshots and DOM snapshots in `~/.tspr/runs/<runId>/ui-exploration/`.
 
 This replicates TestSprite 3.0's "parallel agents" pitch locally, without cloud infrastructure or API keys.
 
@@ -24,7 +24,7 @@ This replicates TestSprite 3.0's "parallel agents" pitch locally, without cloud 
 | AI engine | `claude --model haiku -p` for per-page interaction suggestions; `claude --model sonnet -p` for final synthesis | Haiku cheap at ~$0.00025/call; sonnet quality for scenario writing |
 | Coordination | In-process async frontier (not Redis, not SQLite) | Single process, no network hops; lock-free via `Mutex` from `async-mutex` npm package |
 | Dedup | Canonical URL + DOM structural hash | Prevents re-visiting same page via different click paths |
-| State persistence | SQLite (`~/.localsprite/db.sqlite`) for run summary; raw files for artifacts | Consistent with other modules |
+| State persistence | SQLite (`~/.tspr/db.sqlite`) for run summary; raw files for artifacts | Consistent with other modules |
 | Login | Optional; user-provided fixture or auto-detected heuristic | Mirrors TestSprite `needLogin` flag |
 | Sandbox relationship | App under test runs INSIDE Docker sandbox; Playwright runs OUTSIDE, connects to sandbox-exposed port | Playwright → `http://localhost:<hostPort>` → Docker port mapping → app |
 
@@ -232,10 +232,10 @@ This is a best-effort structural fingerprint. False negatives (same structure, d
    - `tests/fixtures/auth.ts` (Playwright convention)
    - `e2e/fixtures/login.ts`
    - `playwright/setup.ts` with `storageState` export
-   - `.localsprite/login.ts`
+   - `.tspr/login.ts`
 3. Heuristic: if none found and `needLogin=true`, attempt common patterns:
    - Find `input[type=email]` or `input[name=username]` + `input[type=password]` + submit button
-   - Fill with credentials from `projectPath/.localsprite/credentials.json` (if present)
+   - Fill with credentials from `projectPath/.tspr/credentials.json` (if present)
    - If no credentials file: throw `LOGIN_FAILED` with message "no credentials file"
 
 ### 7.2 Session Seeding
@@ -305,7 +305,7 @@ Return JSON: { "scenarios": [ { "id": "S-N", "title": "...", "steps": [...],
 
 ### 10.1 frontend_test_plan.json
 
-Written to `projectPath/.localsprite/frontend_test_plan.json`:
+Written to `projectPath/.tspr/frontend_test_plan.json`:
 
 ```jsonc
 {
@@ -320,8 +320,8 @@ Written to `projectPath/.localsprite/frontend_test_plan.json`:
       "url": "http://localhost:3000/dashboard",
       "title": "Dashboard — MyApp",
       "domHash": "a3f1b2c4d5e6f7a8",
-      "domSnapshotPath": "~/.localsprite/runs/<runId>/ui-exploration/snapshots/a3f1b2c4.html",
-      "screenshotPath": "~/.localsprite/runs/<runId>/ui-exploration/screenshots/a3f1b2c4.png",
+      "domSnapshotPath": "~/.tspr/runs/<runId>/ui-exploration/snapshots/a3f1b2c4.html",
+      "screenshotPath": "~/.tspr/runs/<runId>/ui-exploration/screenshots/a3f1b2c4.png",
       "depth": 1
       // depth: HTTP redirects during navigation = 0 additional hops; client-side route changes = +1 each
     }
@@ -389,7 +389,7 @@ Written to `projectPath/.localsprite/frontend_test_plan.json`:
 ### 10.2 Raw Artifacts Directory
 
 ```
-~/.localsprite/runs/<runId>/ui-exploration/
+~/.tspr/runs/<runId>/ui-exploration/
   snapshots/
     <domHash>.html        ← truncated DOM, UTF-8
   screenshots/
@@ -485,7 +485,7 @@ interface ExploreUIOptions {
   loginFixturePath?: string;    // absolute path
   costCapUsd?: number;          // optional hard $-cap (converts to maxCcCalls estimate)
   runId?: string;               // auto-generated if not provided
-  runDir?: string;              // default ~/.localsprite/runs/<runId>/ui-exploration/
+  runDir?: string;              // default ~/.tspr/runs/<runId>/ui-exploration/
   urlQueryParamBlacklist?: string[]; // additional params to strip during canonicalization
 }
 ```

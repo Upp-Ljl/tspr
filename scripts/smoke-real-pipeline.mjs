@@ -9,7 +9,7 @@
  *   4. generate_backend_test_plan
  *
  * For each tool: report duration, output size, first 200 chars of result,
- * and (where applicable) the artifact file landed under fixtures/demo-app/.localsprite/.
+ * and (where applicable) the artifact file landed under fixtures/demo-app/.tspr/.
  *
  * Cost guard: a typical run costs a few cents on M2.7-highspeed.
  * Hard-aborts if any single tool call exceeds 60s.
@@ -107,24 +107,24 @@ try {
   });
   log('1-init', 'OK');
 
-  await callTool('localsprite_bootstrap_tests', {
+  await callTool('tspr_bootstrap_tests', {
     localPort: 5174, type: 'backend', projectPath: demoApp, testScope: 'codebase',
   }, 30_000);
 
-  await callTool('localsprite_generate_code_summary', {
+  await callTool('tspr_generate_code_summary', {
     projectRootPath: demoApp,
   }, 120_000);
-  reportArtifact('summary-artifact', join(demoApp, '.localsprite', 'code_summary.json'));
+  reportArtifact('summary-artifact', join(demoApp, '.tspr', 'code_summary.json'));
 
-  await callTool('localsprite_generate_standardized_prd', {
+  await callTool('tspr_generate_standardized_prd', {
     projectPath: demoApp,
   }, 120_000);
-  reportArtifact('prd-artifact', join(demoApp, '.localsprite', 'standard_prd.json'));
+  reportArtifact('prd-artifact', join(demoApp, '.tspr', 'standard_prd.json'));
 
-  await callTool('localsprite_generate_backend_test_plan', {
+  await callTool('tspr_generate_backend_test_plan', {
     projectPath: demoApp,
   }, 120_000);
-  reportArtifact('backend-plan', join(demoApp, '.localsprite', 'backend_test_plan.json'));
+  reportArtifact('backend-plan', join(demoApp, '.tspr', 'backend_test_plan.json'));
 
   log('teardown', 'closing server...');
   server.stdin.end();

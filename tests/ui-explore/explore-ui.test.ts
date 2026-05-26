@@ -103,7 +103,7 @@ let tmpBase: string;
 beforeAll(async () => {
   sitePort = await getPort();
   site = await startTinySite(sitePort);
-  tmpBase = path.join(os.tmpdir(), `localsprite-test-${Date.now()}`);
+  tmpBase = path.join(os.tmpdir(), `tspr-test-${Date.now()}`);
   mkdirSync(tmpBase, { recursive: true });
 }, 30_000);
 
@@ -354,7 +354,7 @@ describe('B-3-6: Login failure is pre-flight rejection', () => {
     ).rejects.toMatchObject({ code: 'LOGIN_FAILED' });
 
     // No plan file should be written
-    expect(existsSync(path.join(projectPath, '.localsprite', 'frontend_test_plan.json'))).toBe(false);
+    expect(existsSync(path.join(projectPath, '.tspr', 'frontend_test_plan.json'))).toBe(false);
   }, 15_000);
 });
 
@@ -592,7 +592,7 @@ describe('B-3-15: frontend_test_plan.json written atomically', () => {
       _logger: silentLogger,
     });
 
-    const planPath = path.join(projectPath, '.localsprite', 'frontend_test_plan.json');
+    const planPath = path.join(projectPath, '.tspr', 'frontend_test_plan.json');
     expect(existsSync(planPath)).toBe(true);
     const parsed = JSON.parse(readFileSync(planPath, 'utf-8')) as { runId: string };
     expect(parsed.runId).toBe(report.runId);
@@ -600,8 +600,8 @@ describe('B-3-15: frontend_test_plan.json written atomically', () => {
 
   it('test-plan-json-overwritten-atomically: old stale file gets replaced', async () => {
     const projectPath = freshProjectPath('test-plan-overwrite');
-    mkdirSync(path.join(projectPath, '.localsprite'), { recursive: true });
-    const planPath = path.join(projectPath, '.localsprite', 'frontend_test_plan.json');
+    mkdirSync(path.join(projectPath, '.tspr'), { recursive: true });
+    const planPath = path.join(projectPath, '.tspr', 'frontend_test_plan.json');
     writeFileSync(planPath, JSON.stringify({ stale: true }));
 
     const cc = makeMockCcClient();
@@ -620,10 +620,10 @@ describe('B-3-15: frontend_test_plan.json written atomically', () => {
   }, 20_000);
 
   it('test-plan-json-write-failure-still-resolves: write failure does not reject', async () => {
-    // Use a projectPath whose .localsprite is not writable (simulate by using a file path)
+    // Use a projectPath whose .tspr is not writable (simulate by using a file path)
     const projectPath = freshProjectPath('test-plan-write-fail');
-    // Create a FILE at .localsprite path (not a dir) to force write failure
-    writeFileSync(path.join(projectPath, '.localsprite'), 'not-a-dir');
+    // Create a FILE at .tspr path (not a dir) to force write failure
+    writeFileSync(path.join(projectPath, '.tspr'), 'not-a-dir');
 
     const cc = makeMockCcClient();
 
@@ -888,8 +888,8 @@ describe('Stop reason consistency', () => {
   }, 20_000);
 });
 
-// Real-cc calibration test (skipped unless LOCALSPRITE_REAL_CC env var is set)
-const skipUnlessRealCc = !process.env['LOCALSPRITE_REAL_CC'];
+// Real-cc calibration test (skipped unless TSPR_REAL_CC env var is set)
+const skipUnlessRealCc = !process.env['TSPR_REAL_CC'];
 
 describe.skipIf(skipUnlessRealCc)('Real CC integration (skipped by default)', () => {
   it('happy-path-full-exploration: discovers 3 pages with real cc', async () => {

@@ -1,10 +1,10 @@
-# localsprite — Claude 项目说明
+# tspr — Claude 项目说明
 
 > 给未来 Claude 会话用。仓库特定的坑与本地约定写这里。
 
-## localsprite 是什么
+## tspr 是什么
 
-**localsprite = TestSprite 的本地 MCP 平替**。原则：能抄全抄，效果对齐为准，速度可以慢，只要本地修改效果。
+**tspr = TestSprite 的本地 MCP 平替**。原则：能抄全抄，效果对齐为准，速度可以慢，只要本地修改效果。
 
 - **形态**：MCP server（任何兼容客户端都能调：Claude Code、Cursor、VS Code、Windsurf、Trae…）
 - **测试沙箱**：本地 Docker ephemeral container（不是云端，不是 worktree）
@@ -21,16 +21,16 @@
 
 ## 当前阶段
 
-**MVP-0**：详 `docs/plans/2026-05-26-localsprite-mvp0.md`。
+**MVP-0**：详 `docs/plans/2026-05-26-tspr-mvp0.md`。
 
 ## Agent Work Rules
 
-继承 d2p CLAUDE.md 全套 8 站台 + 3 安全网，路径替换为 localsprite 本地路径。要点不重复，参 `D:\lll\d2p\CLAUDE.md` "Agent Work Rules" + "Workflow Discipline" 两节，全量适用。
+继承 d2p CLAUDE.md 全套 8 站台 + 3 安全网，路径替换为 tspr 本地路径。要点不重复，参 `D:\lll\d2p\CLAUDE.md` "Agent Work Rules" + "Workflow Discipline" 两节，全量适用。
 
 特有差异：
 - **新 MCP tool = 新用户面**：同 PR 必带 auto-runnable test（vitest 单测 + 真起一只 MCP client 调一次的 smoke）。违反 `surface_without_self_test` 红线。
 - **Docker 依赖问题**：用户机器没装 Docker = 我们 fail fast 报错让他装。第一版不做 fallback。
-- **MCP 接口仿写**：tool 名同 TestSprite（`localsprite_bootstrap_tests` etc.），parameter shape 同。这是 functional interface，非 copyright 保护对象，目的是 interop。
+- **MCP 接口仿写**：tool 名同 TestSprite（`tspr_bootstrap_tests` etc.），parameter shape 同。这是 functional interface，非 copyright 保护对象，目的是 interop。
 
 ## 风格约定
 
@@ -38,11 +38,11 @@
 
 ## 项目坐标
 
-- **本地路径**：`D:\lll\localsprite`
+- **本地路径**：`D:\lll\localsprite`（目录名待 lead 迁移，品牌已改为 tspr）
 - **姊妹项目**：`D:\lll\d2p`（独立 repo，独立 roadmap）
 - **主分支**：`main`
 - **测试命令**：`npm test`
-- **dogfood / smoke**：`node scripts/smoke-localsprite.mjs`
+- **dogfood / smoke**：`node scripts/smoke-tspr.mjs`
 - **plans**：`docs/plans/YYYY-MM-DD-<slug>.md`
 - **research**：`docs/research/`
 - **SPEC-SPLIT artifacts**：`docs/details/<NN>-<slug>-{spec,public-surface,tests,comparison-report}.md`

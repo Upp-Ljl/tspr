@@ -13,7 +13,7 @@ let dockerAvailable = true;
 beforeAll(async () => {
   try {
     execSync('docker info', { stdio: 'pipe', timeout: 5000 });
-    execSync('docker image inspect localsprite/sandbox-node:24', { stdio: 'pipe', timeout: 5000 });
+    execSync('docker image inspect tspr/sandbox-node:24', { stdio: 'pipe', timeout: 5000 });
   } catch {
     dockerAvailable = false;
     console.warn('[artifacts.test] Docker or sandbox image not available — skipping');
@@ -34,7 +34,7 @@ describe('pullArtifacts', () => {
 
     try {
       await handle.exec(
-        "mkdir -p /tmp/localsprite-out && echo '{\"passed\":1}' > /tmp/localsprite-out/test_results.json"
+        "mkdir -p /tmp/tspr-out && echo '{\"passed\":1}' > /tmp/tspr-out/test_results.json"
       );
       await handle.pullArtifacts();
       const destPath = path.join(handle.runDir, 'test_results.json');
@@ -55,12 +55,12 @@ describe('pullArtifacts', () => {
 
     try {
       await handle.exec(
-        "mkdir -p /tmp/localsprite-out && echo '{\"passed\":1}' > /tmp/localsprite-out/test_results.json"
+        "mkdir -p /tmp/tspr-out && echo '{\"passed\":1}' > /tmp/tspr-out/test_results.json"
       );
       await handle.pullArtifacts(); // first pull
 
       // Update file inside container
-      await handle.exec("echo '{\"passed\":2}' > /tmp/localsprite-out/test_results.json");
+      await handle.exec("echo '{\"passed\":2}' > /tmp/tspr-out/test_results.json");
       await handle.pullArtifacts(); // second pull — no error
 
       const content = JSON.parse(
@@ -72,7 +72,7 @@ describe('pullArtifacts', () => {
     }
   });
 
-  it('PULL-ARTIFACTS-MISSING-FILE: silent success when /tmp/localsprite-out is absent (B-2-25)', async () => {
+  it('PULL-ARTIFACTS-MISSING-FILE: silent success when /tmp/tspr-out is absent (B-2-25)', async () => {
     if (!dockerAvailable) return;
     const handle = await createSandbox({
       projectPath: await makeTempProject(),
@@ -99,7 +99,7 @@ describe('pullArtifacts', () => {
     try {
       // Write some data so the path exists
       await handle.exec(
-        "mkdir -p /tmp/localsprite-out && echo 'test' > /tmp/localsprite-out/test_results.json"
+        "mkdir -p /tmp/tspr-out && echo 'test' > /tmp/tspr-out/test_results.json"
       );
 
       // Force-stop container without going through dispose()

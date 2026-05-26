@@ -2,7 +2,7 @@
 /**
  * Live smoke against a real MiniMax API key.
  * Reads the key from .cairn-poc3-keys/mmmkey.txt (gitignored), sets env,
- * invokes the cc client through the configured provider (~/.localsprite/config.json),
+ * invokes the cc client through the configured provider (~/.tspr/config.json),
  * sends one short prompt to MiniMax-M2.7-highspeed.
  *
  * Cost guard: limits to one short call; aborts if response > 200 tokens.

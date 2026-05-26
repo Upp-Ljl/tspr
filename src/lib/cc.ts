@@ -64,7 +64,7 @@ export interface CcClientConfig {
   apiKeyEnv?: string;
   modelAliasOverrides?: Partial<Record<ClaudeModel, string>>;
 
-  // ── Nested form (matches loadConfig() output from ~/.localsprite/config.json) ──
+  // ── Nested form (matches loadConfig() output from ~/.tspr/config.json) ──
   openaiCompat?: { baseURL?: string; apiKeyEnv?: string };
   minimax?:      { baseURL?: string; apiKeyEnv?: string };
   claudeSubprocess?: { binary?: string };

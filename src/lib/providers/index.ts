@@ -19,13 +19,13 @@ import { ClaudeSubprocessProvider } from './claude-subprocess.js';
 import { OpenAICompatProvider } from './openai-compat.js';
 import { MinimaxProvider } from './minimax.js';
 import type { CcProvider } from './types.js';
-import type { LocalSpriteConfig } from '../config.js';
+import type { TsprConfig } from '../config.js';
 
 /**
  * Create the appropriate CcProvider from a resolved config object.
  * Defaults to claude-subprocess if no provider is set.
  */
-export function createProvider(config: LocalSpriteConfig): CcProvider {
+export function createProvider(config: TsprConfig): CcProvider {
   const provider = config.provider ?? 'claude';
 
   switch (provider) {

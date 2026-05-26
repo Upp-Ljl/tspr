@@ -14,13 +14,13 @@ export interface Logger {
   error(msg: string, meta?: Record<string, unknown>): void;
 }
 
-export class LocalSpriteError extends Error {
+export class TsprError extends Error {
   constructor(
     message: string,
     public readonly code: string,
     public override readonly cause?: unknown,
   ) {
     super(message);
-    this.name = "LocalSpriteError";
+    this.name = "TsprError";
   }
 }

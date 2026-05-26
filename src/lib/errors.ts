@@ -1,6 +1,6 @@
 /**
  * src/lib/errors.ts
- * LocalSpriteError base class + domain subclasses + MCP JSON-RPC error mapping.
+ * TsprError base class + domain subclasses + MCP JSON-RPC error mapping.
  */
 
 // ─────────────────────────────────────────────
@@ -56,7 +56,7 @@ export type ErrCodeValue = (typeof ErrCode)[keyof typeof ErrCode];
 // ─────────────────────────────────────────────
 // Base error class
 // ─────────────────────────────────────────────
-export class LocalSpriteError extends Error {
+export class TsprError extends Error {
   readonly code: string;
   readonly cause?: unknown;
   readonly data?: Record<string, unknown>;
@@ -67,7 +67,7 @@ export class LocalSpriteError extends Error {
     options?: { cause?: unknown; data?: Record<string, unknown> },
   ) {
     super(message);
-    this.name = 'LocalSpriteError';
+    this.name = 'TsprError';
     this.code = code;
     this.cause = options?.cause;
     this.data = options?.data;
@@ -82,7 +82,7 @@ export class LocalSpriteError extends Error {
 // ─────────────────────────────────────────────
 
 /** Errors originating from sandbox / Docker operations. */
-export class SandboxError extends LocalSpriteError {
+export class SandboxError extends TsprError {
   constructor(
     code: string,
     message: string,
@@ -95,7 +95,7 @@ export class SandboxError extends LocalSpriteError {
 }
 
 /** Errors originating from the claude CLI subprocess. */
-export class CcError extends LocalSpriteError {
+export class CcError extends TsprError {
   constructor(
     code: string,
     message: string,
@@ -108,7 +108,7 @@ export class CcError extends LocalSpriteError {
 }
 
 /** Errors originating from auto-patch report assembly. */
-export class ReportError extends LocalSpriteError {
+export class ReportError extends TsprError {
   constructor(
     code: string,
     message: string,
@@ -152,7 +152,7 @@ export interface McpError {
  * Maps any thrown value to a JSON-RPC error object suitable for MCP responses.
  */
 export function toMcpError(err: unknown): McpError {
-  if (err instanceof LocalSpriteError) {
+  if (err instanceof TsprError) {
     const rpcCode = INVALID_PARAMS_CODES.has(err.code)
       ? JSONRPC_INVALID_PARAMS
       : JSONRPC_INTERNAL_ERROR;

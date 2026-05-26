@@ -1,5 +1,5 @@
 /**
- * Tests for Tool 1: localsprite_bootstrap_tests
+ * Tests for Tool 1: tspr_bootstrap_tests
  * Covers: B-1-1 through B-1-10, B-V-1, B-V-2, B-E-1, B-E-2, B-E-3, B-E-5, B-E-6
  */
 import { describe, it, expect, afterEach } from 'vitest';
@@ -16,7 +16,7 @@ import {
   type TestProject,
 } from '../mcp/helpers.js';
 
-describe('localsprite_bootstrap_tests', () => {
+describe('tspr_bootstrap_tests', () => {
   const projects: TestProject[] = [];
 
   afterEach(() => {

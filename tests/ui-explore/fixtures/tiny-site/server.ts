@@ -28,7 +28,7 @@ const ABOUT_HTML = `<!DOCTYPE html>
 <head><title>About — Tiny Site</title></head>
 <body>
   <h1>About</h1>
-  <p>This is a test fixture site for localsprite ui-explore tests.</p>
+  <p>This is a test fixture site for tspr ui-explore tests.</p>
   <a href="/">Home</a>
   <button type="button">Learn More</button>
 </body>

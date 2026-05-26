@@ -1,5 +1,5 @@
 /**
- * Tests for Tool 5: localsprite_generate_backend_test_plan
+ * Tests for Tool 5: tspr_generate_backend_test_plan
  * Covers: B-5-1 through B-5-6, B-A-4
  */
 import { describe, it, expect, afterEach } from 'vitest';
@@ -40,7 +40,7 @@ const VALID_BACKEND_PLAN = JSON.stringify({
   ],
 });
 
-describe('localsprite_generate_backend_test_plan', () => {
+describe('tspr_generate_backend_test_plan', () => {
   const projects: TestProject[] = [];
 
   afterEach(() => {

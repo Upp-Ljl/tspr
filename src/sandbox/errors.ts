@@ -1,4 +1,4 @@
-import { LocalSpriteError } from './_deps.js';
+import { TsprError } from './_deps.js';
 
 /**
  * Error codes for sandbox operations.
@@ -22,7 +22,7 @@ export type SandboxErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
  * All sandbox errors are instances of SandboxError.
  * Callers MUST check error instanceof SandboxError and error.code.
  */
-export class SandboxError extends LocalSpriteError {
+export class SandboxError extends TsprError {
   /** Docker install docs URL — only present on ERR_DOCKER_UNAVAILABLE */
   readonly installUrl?: string;
 

@@ -78,7 +78,7 @@ class DbImpl implements Db {
 
 /**
  * Open (or create) the SQLite database at `filePath`.
- * Defaults to `~/.localsprite/db.sqlite`.
+ * Defaults to `~/.tspr/db.sqlite`.
  * The parent directory is created if it does not exist.
  * Call `initSchema(db)` after opening to ensure tables exist.
  */
@@ -107,7 +107,7 @@ export function openDb(filePath?: string): Db {
 }
 
 /**
- * Create all localsprite tables (idempotent — uses IF NOT EXISTS).
+ * Create all tspr tables (idempotent — uses IF NOT EXISTS).
  * Safe to call on an already-initialized database.
  */
 export function initSchema(db: Db): void {

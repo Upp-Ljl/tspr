@@ -928,7 +928,7 @@ describe("TestSprite compat output", () => {
   let tmpDir: string;
 
   beforeAll(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "localsprite-test-"));
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "tspr-test-"));
   });
 
   afterAll(async () => {
@@ -944,7 +944,7 @@ describe("TestSprite compat output", () => {
     // Give the fire-and-forget write a moment to complete
     await new Promise((r) => setTimeout(r, 200));
 
-    const compatPath = path.join(tmpDir, ".localsprite", "test_results.json");
+    const compatPath = path.join(tmpDir, ".tspr", "test_results.json");
     const exists = await fs.access(compatPath).then(() => true).catch(() => false);
     expect(exists).toBe(true);
 
@@ -972,7 +972,7 @@ describe("TestSprite compat output", () => {
 
     await new Promise((r) => setTimeout(r, 200));
 
-    const compatPath = path.join(tmpDir, ".localsprite", "test_results.json");
+    const compatPath = path.join(tmpDir, ".tspr", "test_results.json");
     const content = JSON.parse(await fs.readFile(compatPath, "utf8"));
     expect(content.failures[0].stack_trace).toBeDefined();
     // confidence field should NOT appear in compat format

@@ -1,7 +1,7 @@
 /**
  * Docker Ephemeral Sandbox — public API
  *
- * Import path: 'localsprite/sandbox' (configured via package.json exports)
+ * Import path: 'tspr/sandbox' (configured via package.json exports)
  */
 
 export { createSandbox, withSandbox } from './docker.js';

@@ -1,5 +1,5 @@
 /**
- * Tool 7: localsprite_open_test_result_dashboard
+ * Tool 7: tspr_open_test_result_dashboard
  *
  * Queries run history from SQLite and renders a static dashboard HTML file.
  */
@@ -22,7 +22,7 @@ async function dashboardHandler(args: unknown, ctx: ServerContext): Promise<Tool
     const insert = ctx.db.prepare(
       `INSERT INTO runs (tool, params_hash, started_at) VALUES (?, ?, ?)`,
     );
-    const result = insert.run('localsprite_open_test_result_dashboard', paramsHash, startedAt);
+    const result = insert.run('tspr_open_test_result_dashboard', paramsHash, startedAt);
     runId = result.lastInsertRowid;
   } catch (err) {
     ctx.logger.warn('Failed to insert run row', { err });
@@ -77,7 +77,7 @@ async function dashboardHandler(args: unknown, ctx: ServerContext): Promise<Tool
     const lastRunAt = lastRun?.ended_at ?? null;
 
     // Render dashboard HTML
-    const dashboardDir = path.join(os.homedir(), '.localsprite');
+    const dashboardDir = path.join(os.homedir(), '.tspr');
     const dashboardPath = path.join(dashboardDir, 'dashboard.html');
 
     try {
@@ -102,7 +102,7 @@ async function dashboardHandler(args: unknown, ctx: ServerContext): Promise<Tool
     const html = `<!DOCTYPE html>
 <html>
 <head>
-<title>localsprite Dashboard</title>
+<title>tspr Dashboard</title>
 <style>
 body { font-family: sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
 table { border-collapse: collapse; width: 100%; }
@@ -112,7 +112,7 @@ tr:nth-child(even) { background: #f9f9f9; }
 </style>
 </head>
 <body>
-<h1>localsprite Test Dashboard</h1>
+<h1>tspr Test Dashboard</h1>
 <p>Run count: <strong>${runCount}</strong></p>
 <p>Last run: <strong>${lastRunAt ?? 'Never'}</strong></p>
 <h2>Recent Runs (last 20)</h2>
@@ -167,7 +167,7 @@ tr:nth-child(even) { background: #f9f9f9; }
 }
 
 export const dashboardTool: ToolDefinition = {
-  name: 'localsprite_open_test_result_dashboard',
+  name: 'tspr_open_test_result_dashboard',
   description:
     'Queries run history from SQLite, renders a static dashboard HTML file, and returns the file:// URL.',
   inputSchema: dashboardInputSchema,

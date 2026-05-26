@@ -39,7 +39,7 @@ named pipe on Windows) — the same channel the CLI uses.
 
 ## 2. Base Image Strategy
 
-### 2.1 Image: `localsprite/sandbox-node:24`
+### 2.1 Image: `tspr/sandbox-node:24`
 
 Built from `node:24-slim` plus:
 - `playwright` system dependencies (chromium, libnss3, libatk-bridge2.0, etc.)
@@ -48,7 +48,7 @@ Built from `node:24-slim` plus:
 - `vitest` + `@playwright/test` pre-installed globally in the image (speeds up installs)
 - `/work` directory created at build time
 
-This is a custom image we own and version. Tag scheme: `localsprite/sandbox-node:24-<yyyymmdd>`.
+This is a custom image we own and version. Tag scheme: `tspr/sandbox-node:24-<yyyymmdd>`.
 
 ### 2.2 First-run build
 
@@ -58,11 +58,11 @@ This is a custom image we own and version. Tag scheme: `localsprite/sandbox-node
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="localsprite/sandbox-node:24"
+IMAGE="tspr/sandbox-node:24"
 DOCKERFILE="docker/sandbox-node24.Dockerfile"
 
 # Check if image with this Dockerfile digest already exists
-LABEL_KEY="localsprite.dockerfile.sha256"
+LABEL_KEY="tspr.dockerfile.sha256"
 CURRENT_SHA=$(sha256sum "$DOCKERFILE" | awk '{print $1}')
 EXISTING_LABEL=$(docker inspect --format "{{index .Config.Labels \"$LABEL_KEY\"}}" "$IMAGE" 2>/dev/null || true)
 
@@ -85,7 +85,7 @@ Subsequent runs compare the stored label against the current Dockerfile digest b
 
 ### 2.3 Dockerfile location
 
-`docker/sandbox-node24.Dockerfile` in the localsprite repo root.
+`docker/sandbox-node24.Dockerfile` in the tspr repo root.
 
 ### 2.4 Cache by digest
 
@@ -197,7 +197,7 @@ interface CreateSandboxOptions {
 **Docker container create spec:**
 
 ```
-Image:       localsprite/sandbox-node:24
+Image:       tspr/sandbox-node:24
 WorkingDir:  /work
 Mounts:
   - Type: bind
@@ -205,9 +205,9 @@ Mounts:
     Target: /work
     ReadWrite: true              ← generated test files written here
   - Type: tmpfs
-    Target: /tmp/localsprite-out
+    Target: /tmp/tspr-out
     Options: size=512m           ← artifact staging area
-Env:          from options.env, plus LOCALSPRITE_RUN_ID=<runId>
+Env:          from options.env, plus TSPR_RUN_ID=<runId>
 ExposedPorts: one ephemeral port from range [32768, 60999]
 PortBindings: host 0.0.0.0:<allocatedPort> → container <allocatedPort>
 HostConfig:
@@ -217,8 +217,8 @@ HostConfig:
   SecurityOpt: ['no-new-privileges']
   ReadonlyRootfs: false          ← needed for npm install inside container
 Labels:
-  localsprite.run-id: <runId>
-  localsprite.managed: "true"
+  tspr.run-id: <runId>
+  tspr.managed: "true"
 ```
 
 **Port allocation:**
@@ -240,9 +240,9 @@ The timer `Ref` is stored on the sandbox handle so `dispose()` can cancel it.
 ```ts
 interface SandboxHandle {
   readonly id: string;          // Docker container ID (64-char hex)
-  readonly runId: string;       // localsprite run UUID
+  readonly runId: string;       // tspr run UUID
   readonly port: number;        // allocated host port
-  readonly runDir: string;      // host path: ~/.localsprite/runs/<runId>/
+  readonly runDir: string;      // host path: ~/.tspr/runs/<runId>/
   readonly status: SandboxStatus;  // 'running' | 'stopping' | 'disposed'
 
   exec(cmd: string, opts?: ExecOptions): Promise<ExecResult>;
@@ -328,23 +328,23 @@ interface AppHandle {
 
 | Artifact | Source path in container | Destination on host |
 |---|---|---|
-| Generated test files | `/work/.localsprite/generated/` | `~/.localsprite/runs/<runId>/generated/` |
-| `test_results.json` | `/tmp/localsprite-out/test_results.json` | `~/.localsprite/runs/<runId>/test_results.json` |
-| Playwright trace | `/tmp/localsprite-out/playwright-traces/` | `~/.localsprite/runs/<runId>/traces/` |
-| Playwright screenshots | `/tmp/localsprite-out/screenshots/` | `~/.localsprite/runs/<runId>/screenshots/` |
-| vitest JSON report | `/tmp/localsprite-out/vitest-report.json` | `~/.localsprite/runs/<runId>/vitest-report.json` |
+| Generated test files | `/work/.tspr/generated/` | `~/.tspr/runs/<runId>/generated/` |
+| `test_results.json` | `/tmp/tspr-out/test_results.json` | `~/.tspr/runs/<runId>/test_results.json` |
+| Playwright trace | `/tmp/tspr-out/playwright-traces/` | `~/.tspr/runs/<runId>/traces/` |
+| Playwright screenshots | `/tmp/tspr-out/screenshots/` | `~/.tspr/runs/<runId>/screenshots/` |
+| vitest JSON report | `/tmp/tspr-out/vitest-report.json` | `~/.tspr/runs/<runId>/vitest-report.json` |
 
 ### 6.2 Mechanism
 
 `pullArtifacts()` is called by `dispose()` automatically before container removal.
 It also may be called mid-run to stream partial results.
 
-Implementation uses `container.getArchive({ path: '/tmp/localsprite-out' })` which returns
+Implementation uses `container.getArchive({ path: '/tmp/tspr-out' })` which returns
 a `tar` stream. We pipe this through Node's `tar` library (or `tar-fs`) to extract
 into `runDir`.
 
 `runDir` is created during `createSandbox()`:
-`~/.localsprite/runs/<runId>/` with permissions `0o700`.
+`~/.tspr/runs/<runId>/` with permissions `0o700`.
 
 ### 6.3 Partial pull timing
 
@@ -444,9 +444,9 @@ scripts/
 
 1. Checks that `docker` CLI is on PATH (different from daemon availability — this script is run by the developer, not by the Node module).
 2. Computes `sha256` of `docker/sandbox-node24.Dockerfile`.
-3. Runs `docker inspect localsprite/sandbox-node:24` and reads the label `localsprite.dockerfile.sha256`.
+3. Runs `docker inspect tspr/sandbox-node:24` and reads the label `tspr.dockerfile.sha256`.
 4. If digests match → exits 0 ("up to date").
-5. Otherwise runs `docker build` with the label baked in, tagging `localsprite/sandbox-node:24`.
+5. Otherwise runs `docker build` with the label baked in, tagging `tspr/sandbox-node:24`.
 6. On failure prints the build log tail and exits non-zero.
 
 The `npm run build-sandbox-image` script in `package.json` calls this shell script.
@@ -487,8 +487,8 @@ the platform switching is centralized in `image.ts`.
 
 Port binding `0.0.0.0` works on both platforms for Docker Desktop on Windows.
 The container `runDir` base is:
-- Linux/macOS: `~/.localsprite/runs/`
-- Windows: `%LOCALAPPDATA%\localsprite\runs\`
+- Linux/macOS: `~/.tspr/runs/`
+- Windows: `%LOCALAPPDATA%\tspr\runs\`
 
 ---
 
@@ -552,10 +552,10 @@ RUN npm install -g vitest@latest @playwright/test@latest
 # Install Playwright browsers
 RUN npx playwright install chromium --with-deps
 
-RUN mkdir -p /work /tmp/localsprite-out
+RUN mkdir -p /work /tmp/tspr-out
 WORKDIR /work
 
-LABEL localsprite.base-image="node24-slim"
+LABEL tspr.base-image="node24-slim"
 ```
 
 ---

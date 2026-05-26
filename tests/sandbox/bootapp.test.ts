@@ -11,7 +11,7 @@ let dockerAvailable = true;
 beforeAll(async () => {
   try {
     execSync('docker info', { stdio: 'pipe', timeout: 5000 });
-    execSync('docker image inspect localsprite/sandbox-node:24', { stdio: 'pipe', timeout: 5000 });
+    execSync('docker image inspect tspr/sandbox-node:24', { stdio: 'pipe', timeout: 5000 });
   } catch {
     dockerAvailable = false;
     console.warn('[bootapp.test] Docker or sandbox image not available — skipping');
