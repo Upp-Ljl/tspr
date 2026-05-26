@@ -24,6 +24,8 @@ import Database from 'better-sqlite3';
 import { TOOL_DEFINITIONS, TOOL_MAP } from './registry.js';
 import type { ServerContext, ResolvedConfig } from '../types/mcp.js';
 import type { CcClient, Db, Logger, DockerManager, BrowserPool, DockerContainer } from './_deps.js';
+import { createCcClient } from '../lib/cc.js';
+import { loadConfig } from '../lib/config.js';
 
 // ─── Package version ────────────────────────────────────────────────────────
 // Resolved at build time via package.json
@@ -37,7 +39,7 @@ try {
 // ─── CLI flag parsing ────────────────────────────────────────────────────────
 function parseArgs(argv: string[]): Record<string, string> {
   const flags: Record<string, string> = {};
-  const knownFlags = new Set(['--model', '--plan-model', '--concurrency', '--log-level', '--config']);
+  const knownFlags = new Set(['--model', '--plan-model', '--concurrency', '--log-level', '--config', '--provider']);
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -79,9 +81,15 @@ function loadConfigFile(configPath: string): ConfigFile {
   }
 }
 
-function buildConfig(flags: Record<string, string>): ResolvedConfig {
+function buildConfig(flags: Record<string, string>): ResolvedConfig & { provider?: string } {
   const configPath = flags['--config'] ?? path.join(os.homedir(), '.localsprite', 'config.json');
   const fileConfig = loadConfigFile(configPath);
+
+  // Also load provider config (shared path, tolerates missing file)
+  let providerFileConfig: { provider?: string } = {};
+  try {
+    providerFileConfig = loadConfig(configPath);
+  } catch { /* tolerate — falls back to defaults */ }
 
   const logLevel = (flags['--log-level'] ?? fileConfig.logLevel ?? 'info') as ResolvedConfig['logLevel'];
   const concurrency = parseInt(flags['--concurrency'] ?? '1', 10);
@@ -98,6 +106,7 @@ function buildConfig(flags: Record<string, string>): ResolvedConfig {
     dockerImage: fileConfig.dockerImage ?? 'node:24-alpine',
     browserPoolSize: fileConfig.browserPoolSize ?? 3,
     executeTimeoutMs: fileConfig.executeTimeoutMs ?? 300_000,
+    provider: flags['--provider'] ?? providerFileConfig.provider,
   };
 }
 
@@ -180,26 +189,21 @@ function initDb(logger: Logger): Db {
 
 // ─── Stub implementations (replaced by lib-impl in Round 5) ─────────────────
 
-function makeCcClient(config: ResolvedConfig, logger: Logger): CcClient {
-  return {
-    async run(opts) {
-      const { execFile } = await import('node:child_process');
-      const { promisify } = await import('node:util');
-      const execFileAsync = promisify(execFile);
-      const model = opts.model === 'haiku' ? config.planModel : config.model;
-      try {
-        const { stdout } = await execFileAsync(
-          'claude',
-          ['--model', model, '-p', opts.prompt],
-          { timeout: opts.timeoutMs ?? 60_000, maxBuffer: 10 * 1024 * 1024 },
-        );
-        return { stdout, costUsd: 0 };
-      } catch (err) {
-        logger.error('cc subprocess failed', { err: String(err) });
-        throw err;
-      }
-    },
-  };
+function makeCcClient(config: ResolvedConfig & { provider?: string }, logger: Logger): CcClient {
+  // Load full provider config from the config file path
+  let localSpriteConfig = {};
+  try {
+    localSpriteConfig = loadConfig(config.configPath);
+  } catch (err) {
+    logger.warn('Could not load localsprite provider config, falling back to claude subprocess', {
+      err: String(err),
+    });
+  }
+
+  const providerOverride = config.provider as 'claude' | 'openai-compat' | 'minimax' | undefined;
+  const mergedConfig = { ...localSpriteConfig, ...(providerOverride ? { provider: providerOverride } : {}) };
+
+  return createCcClient(mergedConfig);
 }
 
 function makeDockerManager(logger: Logger): DockerManager {
