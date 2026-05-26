@@ -368,6 +368,17 @@ pre-existing `code_summary.json` still succeeds (the tool auto-generates the sum
 **B-4-6**: `pagesDiscovered` and `interactionsDiscovered` are non-negative integers in
 the response.
 
+**B-4-7**: The port used by `localsprite_generate_frontend_test_plan` to check app
+reachability is the `localPort` from the most recent successful `localsprite_bootstrap_tests`
+call with the same `projectPath`. If the same project is bootstrapped twice with different
+ports, the second (most recent) port is used.
+
+**B-4-8**: Session state created by `localsprite_bootstrap_tests` is persisted in
+`~/.localsprite/localsprite.db` and survives server restarts. A `tools/call` to
+`localsprite_generate_frontend_test_plan` after a server restart still finds sessions
+bootstrapped before the restart; `ERR_NOT_BOOTSTRAPPED` is returned only when no
+bootstrap record exists in persistent storage for the given `projectPath`.
+
 ---
 
 ### Group B-5: `localsprite_generate_backend_test_plan`
@@ -422,6 +433,14 @@ entry has `testId`, `title`, `stack`, and `suggestedFixRegion` with non-empty `f
 **B-6-12**: After a successful call, no Docker container spawned during the call is still
 running (all containers are stopped and removed).
 
+**B-6-13**: Every Docker container spawned by localsprite carries the label `localsprite=true`.
+Callers and tests may enumerate localsprite containers (running or stopped) with
+`docker ps -a --filter label=localsprite` to verify cleanup without interfering with
+unrelated Docker activity on the host.
+
+**B-6-14**: When `passed = 0`, `failed = 0`, and `skipped > 0` (all tests were skipped),
+`status = "ok"` and `failures` is an empty array. Skipped tests do not constitute a failure.
+
 ---
 
 ### Group B-7: `localsprite_open_test_result_dashboard`
@@ -435,6 +454,11 @@ running (all containers are stopped and removed).
 recorded in history.
 
 **B-7-4**: `lastRunAt` is either `null` (no runs yet) or a valid ISO8601 date-time string.
+
+**B-7-5**: `runCount` counts all tool invocations across all 8 tools (both success and
+structured-error outcomes) that have a completed row in run history. A call that returned
+a JSON-RPC protocol error before execution began (e.g., invalid params, unknown tool) is
+NOT counted. A call that reached the tool handler but failed with an `ERR_*` code IS counted.
 
 ---
 
@@ -454,6 +478,12 @@ returns `data.code = "ERR_NO_PRIOR_RUN"`.
 modification timestamp newer than the previous run's file.
 
 **B-8-5**: Calling with a non-existent `projectPath` returns `data.code = "ERR_PROJECT_NOT_FOUND"`.
+
+**B-8-6**: A rerun executes exactly the `.spec.ts` files produced by the most recent
+`localsprite_generate_code_and_execute` call for this `projectPath`. If that prior call
+used a `testIds` filter, the rerun replays the same scoped subset — it does not expand to
+the full test plan. `totalTests` in the rerun response reflects the scoped count, not the
+full plan size.
 
 ---
 
@@ -518,6 +548,10 @@ key `"status"` with one of the values `"ok"`, `"partial"`, or `"all-failed"`.
 
 ## 8. Input Validation Contracts
 
+**B-V-0**: Omitting any required parameter for any tool returns a JSON-RPC error with code
+`-32602` (Invalid Params), regardless of which tool or which required field is omitted.
+This applies uniformly to all 8 tools and all required fields listed in §3.
+
 **B-V-1**: Supplying a string where an integer is required for `localPort` returns a JSON-RPC
 error with code `-32602`.
 
@@ -560,3 +594,8 @@ Every error response from a tool has the following JSON-RPC structure:
 **B-E-4**: For unknown tool names, `error.code = -32601`.
 
 **B-E-5**: For runtime errors (Docker, cc, timeout, etc.), `error.code = -32603`.
+
+**B-E-6**: `ERR_INVALID_PORT` returns `error.code = -32602` (not -32603). Port range
+(1–65535) is a parameter constraint enforced before any business logic or runtime
+operations; it is treated as Invalid Params regardless of whether the port is checked by
+the schema layer or a downstream range validator.
