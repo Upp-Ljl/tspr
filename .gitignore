@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.worktrees/
+*.log
+.env*
+.DS_Store
+coverage/
+test-results/
+playwright-report/
+.vscode/
+.idea/
+*.tmp
+*.tsbuildinfo
