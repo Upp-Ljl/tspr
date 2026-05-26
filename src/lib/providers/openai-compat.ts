@@ -225,11 +225,29 @@ export class OpenAICompatProvider implements CcProvider {
       : 0;
 
     return {
-      stdout: content,
+      stdout: cleanResponse(content),
       exitCode: 0,
       durationMs,
       costUsd,
       modelUsed: opts.model,
     };
   }
+}
+
+/**
+ * Strip reasoning blocks and markdown fences so downstream JSON.parse() works.
+ * - `<think>...</think>` — DeepSeek-R1 / MiniMax-M2.7 / o1-style inline reasoning
+ * - ```json ... ``` or ``` ... ``` fences wrapping the actual payload
+ * Idempotent. Leaves regular prose untouched.
+ */
+export function cleanResponse(raw: string): string {
+  // 1. Remove all <think>...</think> blocks (multi-line, possibly multiple)
+  let out = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  // 2. If the remainder is wrapped in a single markdown code fence, unwrap it.
+  //    Match optional language tag (```json, ```ts, etc.).
+  const fence = out.match(/^```(?:[a-zA-Z0-9_-]+)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  if (fence) out = fence[1].trim();
+
+  return out;
 }
