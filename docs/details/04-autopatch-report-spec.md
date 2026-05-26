@@ -358,6 +358,11 @@ function applySizeCap(report: AutoPatchReport): AutoPatchReport {
     (r) => r.failures.forEach((f) => { delete f.response?.body; }),
     (r) => r.failures.forEach((f) => { delete f.suggestedPatch; }),
     (r) => r.failures.forEach((f) => {
+      // NOTE: This emergency truncation uses JavaScript `string.length` (UTF-16 code units),
+      // which is intentionally different from the normal stack cap in sourceMap.ts (B-4-9)
+      // that uses UTF-8 byte measurement. Rationale: sizeCap operates entirely in JS string
+      // space via JSON.stringify; sourceMap operates in UTF-8 buffer space. The unit difference
+      // is documented in surface B-4-16 step 8 and B-4-25. See comparison report C-1.
       if (f.stack && f.stack.length > 2048) f.stack = f.stack.slice(0, 2048) + "[truncated]";
     }),
   ];

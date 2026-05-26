@@ -242,7 +242,7 @@ If the cc subprocess throws, times out, or returns output that cannot be parsed 
   5. `request.body` (all failures)
   6. `response.body` (all failures)
   7. `suggestedPatch` (all failures)
-  8. `stack` truncated to 2048 chars (all failures)
+  8. `stack` truncated to 2048 JavaScript characters (`string.length`; not UTF-8 bytes — distinct from B-4-9's byte cap which applies during normal stack cleaning) (all failures)
 
 If the report still exceeds 500 KB after all drops, it is returned as-is (fields already dropped; no further truncation). A blackbox tester MUST NOT assert that the report is always strictly under 500 KB — the contract is best-effort.
 
@@ -265,6 +265,56 @@ For any `FailureRecord` where `testType === "frontend-e2e"`, the fields `request
 ### B-4-21: `projectPath` echoed verbatim
 
 `report.projectPath === input.projectPath`. No transformation is applied.
+
+### B-4-22: Body redaction is recursive (all nesting depths)
+
+When `request.body` or `response.body` is a JSON string, the redaction pattern `/("password"|"secret"|"token"|"api[_-]?key")\s*:\s*"[^"]+"/gi` is applied to the raw body string. Because the pattern matches on the body text directly (not via JSON parsing), it applies at **any nesting depth**. A deeply nested key such as `{"auth":{"password":"s3cr3t"}}` will have its value replaced with `"[REDACTED]"` just as a top-level key would. Top-level-only matching is explicitly excluded by this contract.
+
+Example:
+- Input: `'{"wrapper":{"password":"x"}}'`
+- Output: `'{"wrapper":{"password":"[REDACTED]"}}'`
+
+### B-4-23: `failureKind` canonical input examples
+
+The internal classification priority order is an implementation detail (see §7). However, the following input → `failureKind` examples are guaranteed for well-formed inputs, and may be used in blackbox assertions:
+
+| Observable signal in `rawStack` / failure input | Expected `failureKind` |
+|---|---|
+| Contains `TimeoutError` or the phrase `exceeded timeout` | `"TIMEOUT"` |
+| Contains `Error: expect(` or `AssertionError` (and no timeout signal above) | `"ASSERTION"` |
+| No other signal matches; `rawStack` is non-empty and has user-space frames | `"EXCEPTION"` (fallback) |
+
+These three examples are a non-exhaustive subset. The full priority ordering (including `NETWORK`, `NAVIGATION`, `VISUAL`) is implementation-defined and must not be relied upon for edge cases not listed above.
+
+### B-4-24: `confidence` normalization formula
+
+The `confidence` field in `FailureRecord` is computed from the cc subprocess's raw integer score by the formula:
+
+```
+confidence = rawScore / 10
+```
+
+where `rawScore` is the integer N parsed from the `CONFIDENCE:N` line in the cc response. `rawScore` is expected to be an integer in the range [0, 10].
+
+Non-integer raw scores (e.g., `6.5`) are accepted and normalized by the same formula, yielding `confidence = 0.65`.
+
+Corollary (for threshold testing):
+- `rawScore = 6` → `confidence = 0.6` → `suggestedPatch` absent (B-4-2)
+- `rawScore = 7` → `confidence = 0.7` → `suggestedPatch` present (B-4-2)
+
+### B-4-25: `testId` is computed from path-normalized inputs
+
+`testId` is derived by `sha256(normalizedTestFile + "\x00" + testName).slice(0, 12)` where `normalizedTestFile` is `testFile` with all backslash (`\`) path separators replaced with forward-slash (`/`) before hashing.
+
+This normalization ensures `testId` is identical across platforms (Windows and POSIX) for the same logical test, regardless of which path separator the test runner uses.
+
+A blackbox tester may assert that providing `"src\\tests\\login.ts"` and `"src/tests/login.ts"` as `testFile` for otherwise identical inputs produces the **same** `testId`.
+
+### B-4-26: `REPORT_SERIALIZATION_FAILED` cannot be triggered by external input
+
+`REPORT_SERIALIZATION_FAILED` is a programmer-error sentinel thrown only when `JSON.stringify(report)` encounters a circular reference introduced by a bug in the report builder itself. It is **not possible** for a well-formed `BuildReportInput` (as defined in §1) to trigger this error.
+
+A blackbox test author MUST NOT expect to be able to inject a triggering condition through the public API. This error code is verified by internal unit tests that have access to the implementation. External (blackbox) tests should document it as "observable only in form: if thrown, it is a `ReportError` with `code === "REPORT_SERIALIZATION_FAILED"`" — but cannot write a reproducible trigger scenario from the outside.
 
 ---
 
