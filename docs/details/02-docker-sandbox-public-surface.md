@@ -211,10 +211,15 @@ If `dispose()` is NOT called explicitly, the container MUST be force-killed and 
 after `options.ttlMs` milliseconds (default 300 000 ms).
 After TTL expiry, `handle.status` MUST become `'disposed'`.
 
-### B-2-16 SIGINT cleanup
+### B-2-16 SIGINT cleanup (POSIX only)
 If the host Node process receives SIGINT while one or more sandboxes are in `'running'`
 state, all running containers MUST be disposed (force-killed and removed) before the
 process exits. No `localsprite.managed = "true"` containers may be left running.
+
+**Platform note**: Applies to Linux/macOS. On Windows, Node's `child_process.kill(signal)`
+maps SIGINT/SIGTERM to forceful termination — user-space handlers do not fire. Container
+cleanup on Windows falls back to TTL expiry (B-2-15) and the `beforeExit` handler for
+graceful exits; abrupt parent-kill scenarios on Windows may leak containers until TTL.
 
 ### B-2-17 pullArtifacts — files land in runDir
 After `pullArtifacts()` resolves, the file `/tmp/localsprite-out/test_results.json`
@@ -270,13 +275,13 @@ Applications running inside the container MUST bind to `handle.port` (not to a f
 port such as 3000 or 4000) to be reachable from the host via `localhost:handle.port`.
 There is no projectType-based default port mapping.
 
-### B-2-28 SIGTERM cleanup
+### B-2-28 SIGTERM cleanup (POSIX only)
 If the host Node process receives SIGTERM while one or more sandboxes are in `'running'`
 state, all running containers MUST be disposed (force-killed and removed) before the
 process exits.
-Behavior is equivalent to SIGINT (B-2-16).
+Behavior is equivalent to SIGINT (B-2-16), including the Windows platform note.
 No `localsprite.managed = "true"` containers may be left running after the process
-terminates.
+terminates on POSIX platforms.
 
 ### B-2-29 dispose — 'stopping' state is transient and may be skipped
 After `dispose()` is called and before it resolves, `handle.status` MAY equal `'stopping'`.

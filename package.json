@@ -10,23 +10,33 @@
   "bin": {
     "localsprite": "./dist/cli/index.js"
   },
+  "exports": {
+    "./sandbox": {
+      "import": "./src/sandbox/index.ts",
+      "types": "./src/sandbox/index.ts"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
     "smoke": "node scripts/smoke-localsprite.mjs",
-    "mcp": "node dist/mcp/server.js"
+    "mcp": "node dist/mcp/server.js",
+    "build-sandbox-image": "bash scripts/build-sandbox-image.sh"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "better-sqlite3": "^12.9.0",
     "dockerode": "^4.0.0",
+    "get-port": "^7.1.0",
     "playwright": "^1.49.0",
+    "tar-fs": "^3.0.8",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/dockerode": "^3.3.0",
     "@types/node": "^24.0.0",
+    "@types/tar-fs": "^2.0.4",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0",
     "@playwright/test": "^1.49.0"
