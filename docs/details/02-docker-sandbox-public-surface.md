@@ -149,7 +149,8 @@ When `ERR_DOCKER_UNAVAILABLE` is thrown, no container must exist in Docker with 
 ### B-2-3 Successful create returns running handle
 If `createSandbox()` resolves, `handle.status` MUST equal `'running'`.
 `handle.id` MUST be a non-empty string.
-`handle.port` MUST be a positive integer in the range [1, 65535].
+`handle.port` MUST be a positive integer in the range [1024, 65535].
+(Ports below 1024 are reserved; the module MUST NOT allocate them.)
 `handle.runId` MUST be a non-empty string unique across concurrent calls.
 `handle.runDir` MUST be an absolute path string; the directory MUST exist on the host.
 
@@ -249,6 +250,57 @@ MUST return `stdout` containing the value of `MY_VAR`.
 `env` passed in `ExecOptions` MUST be merged on top of the container env for that exec only.
 It MUST NOT permanently modify the container environment.
 
+### B-2-25 pullArtifacts — silent success on absent output directory
+If `/tmp/localsprite-out/` does not exist inside the container, or the directory is
+empty, `pullArtifacts()` MUST resolve without throwing.
+No host-side files are created for absent source paths.
+Callers MUST NOT assume that a non-throwing return from `pullArtifacts()` implies any
+file was written.
+
+### B-2-26 concurrent sandboxes — max concurrent limit error code
+When `createSandbox()` is called and the number of active sandboxes already equals
+`LOCALSPRITE_SANDBOX_MAX_CONCURRENT` (default 3), the call MUST throw `SandboxError`
+with `code === 'ERR_MAX_CONCURRENT_EXCEEDED'`.
+The error MUST be thrown before any container is created.
+
+### B-2-27 handle.port — same port on host and container sides
+`handle.port` is the port number used on BOTH the host and the container side of the
+port binding.
+Applications running inside the container MUST bind to `handle.port` (not to a fixed
+port such as 3000 or 4000) to be reachable from the host via `localhost:handle.port`.
+There is no projectType-based default port mapping.
+
+### B-2-28 SIGTERM cleanup
+If the host Node process receives SIGTERM while one or more sandboxes are in `'running'`
+state, all running containers MUST be disposed (force-killed and removed) before the
+process exits.
+Behavior is equivalent to SIGINT (B-2-16).
+No `localsprite.managed = "true"` containers may be left running after the process
+terminates.
+
+### B-2-29 dispose — 'stopping' state is transient and may be skipped
+After `dispose()` is called and before it resolves, `handle.status` MAY equal `'stopping'`.
+Once `dispose()` resolves, `handle.status` MUST equal `'disposed'` (B-2-13 is unaffected).
+Callers MUST NOT rely on observing the `'stopping'` state — it is a transient internal
+state and implementations MAY transition directly from `'running'` to `'disposed'`
+synchronously after container removal.
+
+### B-2-30 OOM detection — sticky after confirmed OOM kill
+After any `exec()` call completes on a container that has been OOM-killed (Docker
+reports exit code 137 AND `OOMKilled = true` in container inspect), the handle enters
+OOM state.
+All subsequent `exec()` calls on that handle MUST throw `SandboxError` with
+`code === 'ERR_OUT_OF_MEMORY'`.
+The OOM state is sticky: once set, it persists until `dispose()` is called.
+Note: if an `exec()` call is in-flight at the moment of OOM kill, that in-flight call
+MAY fail with a different error — only the next exec call AFTER a completed exec
+confirms OOM state. This is NOT a contract violation.
+
+### B-2-31 image build failure — no container leak
+When `ERR_IMAGE_BUILD_FAILED` is thrown, no container with label
+`localsprite.managed = "true"` may exist as a result of that call.
+(Parallel clean-state guarantee to B-2-2, which covers `ERR_DOCKER_UNAVAILABLE`.)
+
 ---
 
 ## 4. Error Codes Table
@@ -260,8 +312,9 @@ It MUST NOT permanently modify the container environment.
 | `ERR_CONTAINER_START_TIMEOUT` | `createSandbox`, `bootApp` | Container/app did not reach running/ready state in time |
 | `ERR_EXEC_TIMEOUT` | `exec` (via `timedOut: true` in result, NOT thrown) | Exec killed because `opts.timeout` exceeded |
 | `ERR_PORT_UNAVAILABLE` | `createSandbox` | No free ephemeral port could be allocated |
+| `ERR_MAX_CONCURRENT_EXCEEDED` | `createSandbox` | Active sandbox count already equals `LOCALSPRITE_SANDBOX_MAX_CONCURRENT` |
 | `ERR_OUT_OF_MEMORY` | `exec` | Container was OOM-killed |
-| `ERR_ARTIFACT_PULL_FAILED` | `pullArtifacts` | tar stream from container could not be extracted |
+| `ERR_ARTIFACT_PULL_FAILED` | `pullArtifacts` | tar stream from container could not be extracted (container must be running) |
 
 **Note on `ERR_EXEC_TIMEOUT`**: timeout does NOT throw; it is communicated via
 `ExecResult.timedOut === true`. `SandboxError` with this code is never thrown directly.
