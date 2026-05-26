@@ -3,6 +3,10 @@ dist/
 .worktrees/
 *.log
 .env*
+.cairn-poc3-keys/
+**/keys.env*
+*.key
+*key.txt
 .DS_Store
 coverage/
 test-results/
