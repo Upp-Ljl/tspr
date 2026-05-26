@@ -1,5 +1,5 @@
 /**
- * Tool 2: localsprite_generate_code_summary
+ * Tool 2: tspr_generate_code_summary
  *
  * Scans the project, identifies framework and key files, delegates heavy analysis
  * to cc subprocess with planModel. Writes code_summary.json.
@@ -165,14 +165,14 @@ export async function runCodeSummary(
     );
   }
 
-  const outputDir = path.join(projectRootPath, '.localsprite');
+  const outputDir = path.join(projectRootPath, '.tspr');
   try {
     fs.mkdirSync(outputDir, { recursive: true });
   } catch (err) {
     throw new McpError(
       ErrorCode.InternalError,
       'ERR_WRITE_FAILED',
-      { code: 'ERR_WRITE_FAILED', suggestion: 'Check filesystem permissions for the .localsprite directory.', cause: String(err) },
+      { code: 'ERR_WRITE_FAILED', suggestion: 'Check filesystem permissions for the .tspr directory.', cause: String(err) },
     );
   }
 
@@ -195,7 +195,7 @@ export async function runCodeSummary(
     throw new McpError(
       ErrorCode.InternalError,
       'ERR_WRITE_FAILED',
-      { code: 'ERR_WRITE_FAILED', suggestion: 'Check filesystem permissions for the .localsprite directory.', cause: String(err) },
+      { code: 'ERR_WRITE_FAILED', suggestion: 'Check filesystem permissions for the .tspr directory.', cause: String(err) },
     );
   }
 
@@ -220,7 +220,7 @@ async function codeSummaryHandler(args: unknown, ctx: ServerContext): Promise<To
     const insert = ctx.db.prepare(
       `INSERT INTO runs (tool, params_hash, started_at) VALUES (?, ?, ?)`,
     );
-    const result = insert.run('localsprite_generate_code_summary', paramsHash, startedAt);
+    const result = insert.run('tspr_generate_code_summary', paramsHash, startedAt);
     runId = result.lastInsertRowid;
   } catch (err) {
     ctx.logger.warn('Failed to insert run row', { err });
@@ -257,7 +257,7 @@ async function codeSummaryHandler(args: unknown, ctx: ServerContext): Promise<To
 }
 
 export const codeSummaryTool: ToolDefinition = {
-  name: 'localsprite_generate_code_summary',
+  name: 'tspr_generate_code_summary',
   description:
     'Scans the project, identifies framework and key files, and generates a structured code summary using cc subprocess. Writes code_summary.json.',
   inputSchema: codeSummaryInputSchema,

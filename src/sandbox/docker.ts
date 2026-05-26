@@ -27,22 +27,22 @@ const DEFAULT_MAX_CONCURRENT = 3;
 const CONTAINER_START_TIMEOUT_MS = 10_000;
 
 function getRunsDir(): string {
-  if (process.env.LOCALSPRITE_RUNS_DIR) {
-    return process.env.LOCALSPRITE_RUNS_DIR;
+  if (process.env.TSPR_RUNS_DIR) {
+    return process.env.TSPR_RUNS_DIR;
   }
   if (os.platform() === 'win32') {
     const localAppData = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');
-    return path.join(localAppData, 'localsprite', 'runs');
+    return path.join(localAppData, 'tspr', 'runs');
   }
-  return path.join(os.homedir(), '.localsprite', 'runs');
+  return path.join(os.homedir(), '.tspr', 'runs');
 }
 
 function getImageName(): string {
-  return process.env.LOCALSPRITE_SANDBOX_IMAGE ?? 'localsprite/sandbox-node:24';
+  return process.env.TSPR_SANDBOX_IMAGE ?? 'tspr/sandbox-node:24';
 }
 
 function getMaxConcurrent(): number {
-  const val = process.env.LOCALSPRITE_SANDBOX_MAX_CONCURRENT;
+  const val = process.env.TSPR_SANDBOX_MAX_CONCURRENT;
   if (val) {
     const parsed = parseInt(val, 10);
     if (!isNaN(parsed) && parsed > 0) return parsed;
@@ -672,14 +672,14 @@ export async function createSandbox(options: CreateSandboxOptions): Promise<Sand
 
   const ttlMs =
     options.ttlMs ??
-    (process.env.LOCALSPRITE_SANDBOX_TTL_MS
-      ? parseInt(process.env.LOCALSPRITE_SANDBOX_TTL_MS, 10)
+    (process.env.TSPR_SANDBOX_TTL_MS
+      ? parseInt(process.env.TSPR_SANDBOX_TTL_MS, 10)
       : DEFAULT_TTL_MS);
 
   const memLimitMb =
     options.memLimitMb ??
-    (process.env.LOCALSPRITE_SANDBOX_MEM_MB
-      ? parseInt(process.env.LOCALSPRITE_SANDBOX_MEM_MB, 10)
+    (process.env.TSPR_SANDBOX_MEM_MB
+      ? parseInt(process.env.TSPR_SANDBOX_MEM_MB, 10)
       : DEFAULT_MEM_LIMIT_MB);
 
   const cpuQuota = options.cpuQuota ?? DEFAULT_CPU_QUOTA;
@@ -687,7 +687,7 @@ export async function createSandbox(options: CreateSandboxOptions): Promise<Sand
   const imageName = getImageName();
 
   // Build env array
-  const envArray: string[] = [`LOCALSPRITE_RUN_ID=${runId}`];
+  const envArray: string[] = [`TSPR_RUN_ID=${runId}`];
   if (options.env) {
     for (const [k, v] of Object.entries(options.env)) {
       envArray.push(`${k}=${v}`);
@@ -712,17 +712,17 @@ export async function createSandbox(options: CreateSandboxOptions): Promise<Sand
       Env: envArray,
       ExposedPorts: exposedPorts,
       Labels: {
-        'localsprite.managed': 'true',
-        'localsprite.run-id': runId,
+        'tspr.managed': 'true',
+        'tspr.run-id': runId,
       },
       HostConfig: {
-        // Bind-mount projectPath at /work and runDir at /tmp/localsprite-out.
+        // Bind-mount projectPath at /work and runDir at /tmp/tspr-out.
         // Using a bind mount for artifacts (vs tmpfs) allows the host to read files
         // written by the container without needing getArchive (which fails on Windows
         // Docker Desktop for tmpfs paths).
         Binds: [
           `${options.projectPath}:/work`,
-          `${runDir}:/tmp/localsprite-out`,
+          `${runDir}:/tmp/tspr-out`,
         ],
         Memory: memLimitMb * 1_048_576,
         CpuQuota: cpuQuota,

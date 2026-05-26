@@ -1,5 +1,5 @@
 /**
- * Tool 6: localsprite_generate_code_and_execute
+ * Tool 6: tspr_generate_code_and_execute
  *
  * Reads test plan, generates test code via cc, runs in Docker, returns structured results.
  */
@@ -68,11 +68,11 @@ export async function runExecute(
   sandbox?: DockerSandbox,
 ): Promise<ExecuteResult> {
   const { projectPath, projectName, testIds, additionalInstruction } = input;
-  const localspriteDir = path.join(projectPath, '.localsprite');
+  const tsprDir = path.join(projectPath, '.tspr');
 
   // Load test plans
-  const frontendPlanPath = path.join(localspriteDir, 'frontend_test_plan.json');
-  const backendPlanPath = path.join(localspriteDir, 'backend_test_plan.json');
+  const frontendPlanPath = path.join(tsprDir, 'frontend_test_plan.json');
+  const backendPlanPath = path.join(tsprDir, 'backend_test_plan.json');
 
   let allScenarios: Array<{ id: string; type?: string; title?: string; endpoint?: string; description?: string }> = [];
 
@@ -86,7 +86,7 @@ export async function runExecute(
       {
         code: 'ERR_NO_TEST_PLAN',
         projectPath,
-        suggestion: 'Run localsprite_generate_frontend_test_plan or localsprite_generate_backend_test_plan first.',
+        suggestion: 'Run tspr_generate_frontend_test_plan or tspr_generate_backend_test_plan first.',
       },
     );
   }
@@ -137,7 +137,7 @@ export async function runExecute(
   }
 
   // Generate test code via cc
-  const generatedTestsDir = path.join(localspriteDir, 'generated_tests');
+  const generatedTestsDir = path.join(tsprDir, 'generated_tests');
   fs.mkdirSync(generatedTestsDir, { recursive: true });
 
   const scenarioJson = JSON.stringify(allScenarios, null, 2);
@@ -191,7 +191,7 @@ Return ONLY the TypeScript code, no markdown fences.`;
           `${generatedTestsDir}:/tests`,
         ],
         cmd: ['sh', '-c', 'cd /workspace && npm install --silent && npx vitest run /tests/*.spec.ts --reporter=json 2>&1 || true'],
-        labels: { localsprite: 'true' },
+        labels: { tspr: 'true' },
         timeoutMs: ctx.config.executeTimeoutMs,
       });
     } catch {
@@ -212,7 +212,7 @@ Return ONLY the TypeScript code, no markdown fences.`;
           `${projectPath}:/workspace`,
           `${generatedTestsDir}:/tests`,
         ],
-        labels: { localsprite: 'true' },
+        labels: { tspr: 'true' },
       });
     } catch {
       throw new McpError(
@@ -289,8 +289,8 @@ Return ONLY the TypeScript code, no markdown fences.`;
   const status = computeStatus(passed, failed, skipped);
 
   // Write artifacts
-  const outputPath = path.join(localspriteDir, 'test_results.json');
-  const reportPath = path.join(localspriteDir, 'report.html');
+  const outputPath = path.join(tsprDir, 'test_results.json');
+  const reportPath = path.join(tsprDir, 'report.html');
 
   const resultData: ExecuteResult = {
     status,
@@ -317,7 +317,7 @@ Return ONLY the TypeScript code, no markdown fences.`;
   // Write simple HTML report
   const reportHtml = `<!DOCTYPE html>
 <html>
-<head><title>localsprite Test Report — ${projectName}</title></head>
+<head><title>tspr Test Report — ${projectName}</title></head>
 <body>
 <h1>Test Report: ${projectName}</h1>
 <p>Status: <strong>${status}</strong></p>
@@ -363,7 +363,7 @@ async function generateAndExecuteHandler(args: unknown, ctx: ServerContext): Pro
     const insert = ctx.db.prepare(
       `INSERT INTO runs (tool, params_hash, started_at) VALUES (?, ?, ?)`,
     );
-    const result = insert.run('localsprite_generate_code_and_execute', paramsHash, startedAt);
+    const result = insert.run('tspr_generate_code_and_execute', paramsHash, startedAt);
     runId = result.lastInsertRowid;
   } catch (err) {
     ctx.logger.warn('Failed to insert run row', { err });
@@ -400,7 +400,7 @@ async function generateAndExecuteHandler(args: unknown, ctx: ServerContext): Pro
 }
 
 export const generateAndExecuteTool: ToolDefinition = {
-  name: 'localsprite_generate_code_and_execute',
+  name: 'tspr_generate_code_and_execute',
   description:
     'Reads test plan, generates test code via cc, runs tests in a Docker container, and returns structured results with failure details and suggested fixes.',
   inputSchema: generateAndExecuteInputSchema,

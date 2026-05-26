@@ -70,7 +70,7 @@ export interface AppHandle {
 export interface SandboxHandle {
   /** Docker container ID (64-char hex string). Unique per process run. */
   readonly id: string;
-  /** UUID identifying this test run. Used as a key in ~/.localsprite/runs/. */
+  /** UUID identifying this test run. Used as a key in ~/.tspr/runs/. */
   readonly runId: string;
   /** Allocated host TCP port forwarded into the container. */
   readonly port: number;

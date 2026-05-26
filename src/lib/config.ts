@@ -1,12 +1,12 @@
 /**
  * src/lib/config.ts
- * Loads ~/.localsprite/config.json with Zod validation.
+ * Loads ~/.tspr/config.json with Zod validation.
  * Merges env-var overrides on top.
  *
  * ENV VARS (override config.json):
- *   LOCALSPRITE_PROVIDER        — overrides config.provider
- *   LOCALSPRITE_BASE_URL        — overrides per-provider baseURL
- *   LOCALSPRITE_API_KEY_ENV     — name of env var holding the actual key
+ *   TSPR_PROVIDER        — overrides config.provider
+ *   TSPR_BASE_URL        — overrides per-provider baseURL
+ *   TSPR_API_KEY_ENV     — name of env var holding the actual key
  */
 
 import * as fs from 'node:fs';
@@ -48,7 +48,7 @@ const ClaudeSubprocessSchema = z
   })
   .optional();
 
-export const LocalSpriteConfigSchema = z.object({
+export const TsprConfigSchema = z.object({
   provider:         ProviderSchema.optional(),
   modelAlias:       ModelAliasMapSchema,
   openaiCompat:     OpenAICompatSchema,
@@ -56,23 +56,23 @@ export const LocalSpriteConfigSchema = z.object({
   claudeSubprocess: ClaudeSubprocessSchema,
 });
 
-export type LocalSpriteConfig = z.infer<typeof LocalSpriteConfigSchema>;
+export type TsprConfig = z.infer<typeof TsprConfigSchema>;
 
 // ─────────────────────────────────────────────
 // Loader
 // ─────────────────────────────────────────────
 
-/** Default config path: ~/.localsprite/config.json */
+/** Default config path: ~/.tspr/config.json */
 function defaultConfigPath(): string {
-  return path.join(os.homedir(), '.localsprite', 'config.json');
+  return path.join(os.homedir(), '.tspr', 'config.json');
 }
 
 /**
- * Load and validate ~/.localsprite/config.json (or an explicit path).
+ * Load and validate ~/.tspr/config.json (or an explicit path).
  * Returns an empty config object if the file is absent.
  * Throws a descriptive error if the file exists but is invalid JSON or fails validation.
  */
-export function loadConfig(configPath?: string): LocalSpriteConfig {
+export function loadConfig(configPath?: string): TsprConfig {
   const filePath = configPath ?? defaultConfigPath();
 
   let raw: unknown = {};
@@ -94,7 +94,7 @@ export function loadConfig(configPath?: string): LocalSpriteConfig {
     }
   }
 
-  const result = LocalSpriteConfigSchema.safeParse(raw);
+  const result = TsprConfigSchema.safeParse(raw);
   if (!result.success) {
     const issues = result.error.issues
       .map((i) => `  ${i.path.join('.')}: ${i.message}`)
@@ -113,23 +113,23 @@ export function loadConfig(configPath?: string): LocalSpriteConfig {
  * Apply environment-variable overrides on top of the parsed config.
  * Never reads actual secret keys here — only reads "which env var name to use".
  */
-function applyEnvOverrides(cfg: LocalSpriteConfig): LocalSpriteConfig {
+function applyEnvOverrides(cfg: TsprConfig): TsprConfig {
   const out = { ...cfg };
 
-  // LOCALSPRITE_PROVIDER overrides config.provider
-  const envProvider = process.env['LOCALSPRITE_PROVIDER'];
+  // TSPR_PROVIDER overrides config.provider
+  const envProvider = process.env['TSPR_PROVIDER'];
   if (envProvider) {
     const parsed = ProviderSchema.safeParse(envProvider);
     if (!parsed.success) {
       throw new Error(
-        `LOCALSPRITE_PROVIDER="${envProvider}" is invalid. Must be one of: claude, openai-compat, minimax`,
+        `TSPR_PROVIDER="${envProvider}" is invalid. Must be one of: claude, openai-compat, minimax`,
       );
     }
     out.provider = parsed.data;
   }
 
-  // LOCALSPRITE_API_KEY_ENV overrides the apiKeyEnv for the active provider
-  const envApiKeyEnvName = process.env['LOCALSPRITE_API_KEY_ENV'];
+  // TSPR_API_KEY_ENV overrides the apiKeyEnv for the active provider
+  const envApiKeyEnvName = process.env['TSPR_API_KEY_ENV'];
   if (envApiKeyEnvName) {
     const provider = out.provider ?? 'claude';
     if (provider === 'openai-compat') {
@@ -139,8 +139,8 @@ function applyEnvOverrides(cfg: LocalSpriteConfig): LocalSpriteConfig {
     }
   }
 
-  // LOCALSPRITE_BASE_URL overrides per-provider baseURL
-  const envBaseURL = process.env['LOCALSPRITE_BASE_URL'];
+  // TSPR_BASE_URL overrides per-provider baseURL
+  const envBaseURL = process.env['TSPR_BASE_URL'];
   if (envBaseURL) {
     const provider = out.provider ?? 'claude';
     if (provider === 'openai-compat') {

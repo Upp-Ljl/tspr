@@ -189,12 +189,12 @@ describe('Input Validation Contracts (B-V-*)', () => {
 
   // ─── B-V-4: dashboard accepts empty and extra fields ─────────────────────
   it('VALIDATE-004 (B-V-4): dashboard accepts empty input object', () => {
-    const result = TOOL_MAP.get('localsprite_open_test_result_dashboard')!.inputSchema.safeParse({});
+    const result = TOOL_MAP.get('tspr_open_test_result_dashboard')!.inputSchema.safeParse({});
     expect(result.success).toBe(true);
   });
 
   it('VALIDATE-004 (B-V-4): dashboard accepts extra unknown fields via passthrough', () => {
-    const result = TOOL_MAP.get('localsprite_open_test_result_dashboard')!.inputSchema.safeParse({
+    const result = TOOL_MAP.get('tspr_open_test_result_dashboard')!.inputSchema.safeParse({
       unknownField: 42,
       another: 'yes',
     });

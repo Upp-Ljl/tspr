@@ -21,12 +21,12 @@ export async function dockerInspect(id: string): Promise<Record<string, unknown>
 }
 
 /**
- * Returns list of all container IDs with label localsprite.managed=true
+ * Returns list of all container IDs with label tspr.managed=true
  */
 export async function listManagedContainers(): Promise<string[]> {
   try {
     const result = execSync(
-      'docker ps -a --filter label=localsprite.managed=true --format {{.ID}}',
+      'docker ps -a --filter label=tspr.managed=true --format {{.ID}}',
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
     );
     return result.trim().split('\n').filter(Boolean);

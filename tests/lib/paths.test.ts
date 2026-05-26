@@ -10,7 +10,7 @@ import fs from 'node:fs';
 
 // We test with real os.homedir() — no mocking needed; just assert structure.
 import {
-  localspriteHome,
+  tsprHome,
   runsDir,
   dbPath,
   configPath,
@@ -28,27 +28,27 @@ describe('paths', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  describe('localspriteHome', () => {
+  describe('tsprHome', () => {
     it('returns a non-empty absolute path', () => {
-      const home = localspriteHome();
+      const home = tsprHome();
       expect(home).toBeTruthy();
       expect(path.isAbsolute(home)).toBe(true);
     });
 
-    it('ends with .localsprite', () => {
-      const home = localspriteHome();
-      expect(home.endsWith('.localsprite') || home.endsWith('.localsprite' + path.sep)).toBe(true);
+    it('ends with .tspr', () => {
+      const home = tsprHome();
+      expect(home.endsWith('.tspr') || home.endsWith('.tspr' + path.sep)).toBe(true);
     });
 
     it('is under os.homedir()', () => {
-      const home = localspriteHome();
+      const home = tsprHome();
       expect(home.startsWith(os.homedir())).toBe(true);
     });
   });
 
   describe('runsDir', () => {
-    it('is localspriteHome() + /runs', () => {
-      expect(runsDir()).toBe(path.join(localspriteHome(), 'runs'));
+    it('is tsprHome() + /runs', () => {
+      expect(runsDir()).toBe(path.join(tsprHome(), 'runs'));
     });
 
     it('is an absolute path', () => {
@@ -57,8 +57,8 @@ describe('paths', () => {
   });
 
   describe('dbPath', () => {
-    it('is localspriteHome() + /db.sqlite', () => {
-      expect(dbPath()).toBe(path.join(localspriteHome(), 'db.sqlite'));
+    it('is tsprHome() + /db.sqlite', () => {
+      expect(dbPath()).toBe(path.join(tsprHome(), 'db.sqlite'));
     });
 
     it('ends with db.sqlite', () => {
@@ -67,8 +67,8 @@ describe('paths', () => {
   });
 
   describe('configPath', () => {
-    it('is localspriteHome() + /config.json', () => {
-      expect(configPath()).toBe(path.join(localspriteHome(), 'config.json'));
+    it('is tsprHome() + /config.json', () => {
+      expect(configPath()).toBe(path.join(tsprHome(), 'config.json'));
     });
 
     it('ends with config.json', () => {

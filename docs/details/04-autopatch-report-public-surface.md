@@ -14,7 +14,7 @@
 ## 1. Entry Point
 
 ```typescript
-import { buildReport } from "localsprite/report";
+import { buildReport } from "tspr/report";
 
 async function buildReport(input: BuildReportInput): Promise<AutoPatchReport>
 ```
@@ -353,7 +353,7 @@ class ReportError extends Error {
 | `failures[].errorMessage` | First meaningful line of the failure message. Short enough to show in a list view without truncation. |
 | `failures[].stack` | Source-mapped stack trace. Frames from `node_modules` and runner internals are removed. Use this to find the test line and the application line that triggered the failure. |
 | `failures[].domSnapshot` | HTML of the page at the moment of failure. Useful for understanding what the user would have seen. Truncated at element boundary. |
-| `failures[].screenshotPath` | Absolute path to a PNG file capturing the browser viewport at failure. The file persists on disk until user clears `~/.localsprite/screenshots/`. |
+| `failures[].screenshotPath` | Absolute path to a PNG file capturing the browser viewport at failure. The file persists on disk until user clears `~/.tspr/screenshots/`. |
 | `failures[].consoleErrors` | Browser console entries emitted before the failure. Often reveals API errors or unhandled promise rejections. |
 | `failures[].networkErrors` | Failed HTTP requests detected by browser network interception. Use with `failureKind === "NETWORK"`. |
 | `failures[].lastUrl` | Browser URL at failure. Useful for distinguishing "navigated to wrong page" from "correct page but wrong content". |
@@ -372,7 +372,7 @@ class ReportError extends Error {
 
 ## 6. MCP Tool Return Shape
 
-The `AutoPatchReport` is returned by `localsprite_generate_code_and_execute` as:
+The `AutoPatchReport` is returned by `tspr_generate_code_and_execute` as:
 
 ```typescript
 {

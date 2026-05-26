@@ -1,5 +1,5 @@
 /**
- * Tool 5: localsprite_generate_backend_test_plan
+ * Tool 5: tspr_generate_backend_test_plan
  *
  * Scans project for Express/Fastify/Next API routes and produces a backend test plan.
  */
@@ -32,7 +32,7 @@ function detectRoutes(projectPath: string): string[] {
       return;
     }
     for (const e of entries) {
-      if (e === 'node_modules' || e === '.git' || e === 'dist' || e === '.localsprite') continue;
+      if (e === 'node_modules' || e === '.git' || e === 'dist' || e === '.tspr') continue;
       const fp = path.join(dir, e);
       let stat: fs.Stats;
       try {
@@ -101,7 +101,7 @@ async function backendPlanHandler(args: unknown, ctx: ServerContext): Promise<To
     const insert = ctx.db.prepare(
       `INSERT INTO runs (tool, params_hash, started_at) VALUES (?, ?, ?)`,
     );
-    const result = insert.run('localsprite_generate_backend_test_plan', paramsHash, startedAt);
+    const result = insert.run('tspr_generate_backend_test_plan', paramsHash, startedAt);
     runId = result.lastInsertRowid;
   } catch (err) {
     ctx.logger.warn('Failed to insert run row', { err });
@@ -143,7 +143,7 @@ async function backendPlanHandler(args: unknown, ctx: ServerContext): Promise<To
 
     // Read PRD if present (optional enrichment)
     let prdContext = '';
-    const prdPath = path.join(projectPath, '.localsprite', 'standard_prd.json');
+    const prdPath = path.join(projectPath, '.tspr', 'standard_prd.json');
     if (fs.existsSync(prdPath)) {
       try {
         prdContext = `\n\nPRD Context:\n${fs.readFileSync(prdPath, 'utf-8').slice(0, 2000)}`;
@@ -195,7 +195,7 @@ Return ONLY valid JSON.`;
       }
     }
 
-    const outputDir = path.join(projectPath, '.localsprite');
+    const outputDir = path.join(projectPath, '.tspr');
     fs.mkdirSync(outputDir, { recursive: true });
     const outputPath = path.join(outputDir, 'backend_test_plan.json');
 
@@ -243,7 +243,7 @@ Return ONLY valid JSON.`;
 }
 
 export const backendPlanTool: ToolDefinition = {
-  name: 'localsprite_generate_backend_test_plan',
+  name: 'tspr_generate_backend_test_plan',
   description:
     'Scans the project for Express/Fastify/Next API routes and generates a structured backend test plan with happy-path, error, auth, integration, and db scenarios.',
   inputSchema: backendPlanInputSchema,

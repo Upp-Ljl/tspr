@@ -1,5 +1,5 @@
 {
-  "name": "localsprite",
+  "name": "tspr",
   "version": "0.0.0",
   "description": "Local + MCP-server testing agent. Functional sibling of TestSprite, no API key, Node/TS projects.",
   "type": "module",
@@ -8,7 +8,7 @@
     "node": ">=24.0.0"
   },
   "bin": {
-    "localsprite": "./dist/cli/index.js"
+    "tspr": "./dist/cli/index.js"
   },
   "exports": {
     "./sandbox": {
@@ -20,7 +20,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
-    "smoke": "node scripts/smoke-localsprite.mjs",
+    "smoke": "node scripts/smoke-tspr.mjs",
     "mcp": "node dist/mcp/server.js",
     "build-sandbox-image": "bash scripts/build-sandbox-image.sh"
   },

@@ -10,13 +10,13 @@ export interface Logger {
   debug(msg: string, ...args: unknown[]): void;
 }
 
-export class LocalSpriteError extends Error {
+export class TsprError extends Error {
   readonly code: string;
   readonly cause?: unknown;
 
   constructor(code: string, message: string, cause?: unknown) {
     super(message);
-    this.name = 'LocalSpriteError';
+    this.name = 'TsprError';
     this.code = code;
     this.cause = cause;
   }

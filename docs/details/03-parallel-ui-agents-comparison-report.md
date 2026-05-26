@@ -288,7 +288,7 @@ framework needs to know how to intercept the `claude` CLI subprocess; this is a 
 concern, not a contract concern. The surface correctly excludes "the exact claude CLI flags
 passed to the AI subprocess" from its scope.
 
-No surface change required. Test harness should use `process.env.LOCALSPRITE_CC_BIN` or
+No surface change required. Test harness should use `process.env.TSPR_CC_BIN` or
 similar env-var override (implementation to decide); this is out of scope for this report.
 
 ---

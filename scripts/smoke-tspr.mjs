@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Smoke test for localsprite — end-to-end:
+ * Smoke test for tspr — end-to-end:
  *   1. Spawn the MCP server as a stdio child.
  *   2. Initialize via MCP protocol.
  *   3. tools/list — verify all 8 tools register with expected names.
- *   4. tools/call localsprite_bootstrap_tests against the demo fixture.
+ *   4. tools/call tspr_bootstrap_tests against the demo fixture.
  *   5. Tear down.
  *
- * Run: node scripts/smoke-localsprite.mjs
+ * Run: node scripts/smoke-tspr.mjs
  * Exit 0 = all green, non-zero = failure (caller prints which step).
  */
 import { spawn } from 'node:child_process';
@@ -21,14 +21,14 @@ const cliPath = resolve(repoRoot, 'dist/cli/index.js');
 const demoApp = resolve(repoRoot, 'fixtures/demo-app');
 
 const EXPECTED_TOOLS = [
-  'localsprite_bootstrap_tests',
-  'localsprite_generate_code_summary',
-  'localsprite_generate_standardized_prd',
-  'localsprite_generate_frontend_test_plan',
-  'localsprite_generate_backend_test_plan',
-  'localsprite_generate_code_and_execute',
-  'localsprite_open_test_result_dashboard',
-  'localsprite_rerun_tests',
+  'tspr_bootstrap_tests',
+  'tspr_generate_code_summary',
+  'tspr_generate_standardized_prd',
+  'tspr_generate_frontend_test_plan',
+  'tspr_generate_backend_test_plan',
+  'tspr_generate_code_and_execute',
+  'tspr_open_test_result_dashboard',
+  'tspr_rerun_tests',
 ];
 
 function log(step, msg) {
@@ -48,7 +48,7 @@ if (!existsSync(demoApp)) {
 
 const server = spawn(process.execPath, [cliPath, 'mcp'], {
   stdio: ['pipe', 'pipe', 'pipe'],
-  env: { ...process.env, LOCALSPRITE_LOG_LEVEL: 'error' },
+  env: { ...process.env, TSPR_LOG_LEVEL: 'error' },
 });
 
 let stderrBuf = '';
@@ -122,10 +122,10 @@ async function main() {
   }
   log('2-tools-list', `OK 8/8 tools registered`);
 
-  log('3-bootstrap-call', 'invoking localsprite_bootstrap_tests on demo fixture...');
+  log('3-bootstrap-call', 'invoking tspr_bootstrap_tests on demo fixture...');
   try {
     const callResult = await send('tools/call', {
-      name: 'localsprite_bootstrap_tests',
+      name: 'tspr_bootstrap_tests',
       arguments: {
         localPort: 5174,
         type: 'backend',

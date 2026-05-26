@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { loadConfig, LocalSpriteConfigSchema } from '../../src/lib/config.js';
+import { loadConfig, TsprConfigSchema } from '../../src/lib/config.js';
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -30,7 +30,7 @@ function tmpBadJsonFile(): string {
 // Saved env state
 let savedEnv: Record<string, string | undefined> = {};
 
-const ENV_KEYS = ['LOCALSPRITE_PROVIDER', 'LOCALSPRITE_BASE_URL', 'LOCALSPRITE_API_KEY_ENV'];
+const ENV_KEYS = ['TSPR_PROVIDER', 'TSPR_BASE_URL', 'TSPR_API_KEY_ENV'];
 
 beforeEach(() => {
   savedEnv = {};
@@ -54,53 +54,53 @@ afterEach(() => {
 // Schema validation
 // ─────────────────────────────────────────────
 
-describe('LocalSpriteConfigSchema', () => {
+describe('TsprConfigSchema', () => {
   it('accepts empty object', () => {
-    const r = LocalSpriteConfigSchema.safeParse({});
+    const r = TsprConfigSchema.safeParse({});
     expect(r.success).toBe(true);
   });
 
   it('accepts valid config with provider=claude', () => {
-    const r = LocalSpriteConfigSchema.safeParse({ provider: 'claude' });
+    const r = TsprConfigSchema.safeParse({ provider: 'claude' });
     expect(r.success).toBe(true);
   });
 
   it('accepts valid config with provider=openai-compat', () => {
-    const r = LocalSpriteConfigSchema.safeParse({ provider: 'openai-compat' });
+    const r = TsprConfigSchema.safeParse({ provider: 'openai-compat' });
     expect(r.success).toBe(true);
   });
 
   it('accepts valid config with provider=minimax', () => {
-    const r = LocalSpriteConfigSchema.safeParse({ provider: 'minimax' });
+    const r = TsprConfigSchema.safeParse({ provider: 'minimax' });
     expect(r.success).toBe(true);
   });
 
   it('rejects unknown provider value', () => {
-    const r = LocalSpriteConfigSchema.safeParse({ provider: 'anthropic-direct' });
+    const r = TsprConfigSchema.safeParse({ provider: 'anthropic-direct' });
     expect(r.success).toBe(false);
   });
 
   it('accepts modelAlias with partial overrides', () => {
-    const r = LocalSpriteConfigSchema.safeParse({ modelAlias: { haiku: 'my-haiku' } });
+    const r = TsprConfigSchema.safeParse({ modelAlias: { haiku: 'my-haiku' } });
     expect(r.success).toBe(true);
   });
 
   it('accepts openaiCompat with baseURL', () => {
-    const r = LocalSpriteConfigSchema.safeParse({
+    const r = TsprConfigSchema.safeParse({
       openaiCompat: { baseURL: 'https://api.openai.com/v1', apiKeyEnv: 'OPENAI_API_KEY' },
     });
     expect(r.success).toBe(true);
   });
 
   it('rejects openaiCompat with invalid URL', () => {
-    const r = LocalSpriteConfigSchema.safeParse({
+    const r = TsprConfigSchema.safeParse({
       openaiCompat: { baseURL: 'not-a-url' },
     });
     expect(r.success).toBe(false);
   });
 
   it('accepts minimax with baseURL', () => {
-    const r = LocalSpriteConfigSchema.safeParse({
+    const r = TsprConfigSchema.safeParse({
       minimax: { baseURL: 'https://api.minimaxi.chat/v1', apiKeyEnv: 'MINIMAX_API_KEY' },
     });
     expect(r.success).toBe(true);
@@ -145,43 +145,43 @@ describe('loadConfig — file-based', () => {
 // ─────────────────────────────────────────────
 
 describe('loadConfig — env var overrides', () => {
-  it('LOCALSPRITE_PROVIDER overrides config.provider', () => {
+  it('TSPR_PROVIDER overrides config.provider', () => {
     const file = tmpConfigFile({ provider: 'claude' });
-    process.env['LOCALSPRITE_PROVIDER'] = 'minimax';
+    process.env['TSPR_PROVIDER'] = 'minimax';
     const cfg = loadConfig(file);
     expect(cfg.provider).toBe('minimax');
   });
 
-  it('LOCALSPRITE_PROVIDER with invalid value throws', () => {
+  it('TSPR_PROVIDER with invalid value throws', () => {
     const file = tmpConfigFile({});
-    process.env['LOCALSPRITE_PROVIDER'] = 'bad-provider';
-    expect(() => loadConfig(file)).toThrow(/LOCALSPRITE_PROVIDER/);
+    process.env['TSPR_PROVIDER'] = 'bad-provider';
+    expect(() => loadConfig(file)).toThrow(/TSPR_PROVIDER/);
   });
 
-  it('LOCALSPRITE_API_KEY_ENV overrides apiKeyEnv for openai-compat', () => {
+  it('TSPR_API_KEY_ENV overrides apiKeyEnv for openai-compat', () => {
     const file = tmpConfigFile({ provider: 'openai-compat' });
-    process.env['LOCALSPRITE_API_KEY_ENV'] = 'MY_CUSTOM_KEY';
+    process.env['TSPR_API_KEY_ENV'] = 'MY_CUSTOM_KEY';
     const cfg = loadConfig(file);
     expect(cfg.openaiCompat?.apiKeyEnv).toBe('MY_CUSTOM_KEY');
   });
 
-  it('LOCALSPRITE_API_KEY_ENV overrides apiKeyEnv for minimax', () => {
+  it('TSPR_API_KEY_ENV overrides apiKeyEnv for minimax', () => {
     const file = tmpConfigFile({ provider: 'minimax' });
-    process.env['LOCALSPRITE_API_KEY_ENV'] = 'MY_MM_KEY';
+    process.env['TSPR_API_KEY_ENV'] = 'MY_MM_KEY';
     const cfg = loadConfig(file);
     expect(cfg.minimax?.apiKeyEnv).toBe('MY_MM_KEY');
   });
 
-  it('LOCALSPRITE_BASE_URL overrides baseURL for openai-compat', () => {
+  it('TSPR_BASE_URL overrides baseURL for openai-compat', () => {
     const file = tmpConfigFile({ provider: 'openai-compat' });
-    process.env['LOCALSPRITE_BASE_URL'] = 'https://override.example.com/v1';
+    process.env['TSPR_BASE_URL'] = 'https://override.example.com/v1';
     const cfg = loadConfig(file);
     expect(cfg.openaiCompat?.baseURL).toBe('https://override.example.com/v1');
   });
 
-  it('LOCALSPRITE_BASE_URL overrides baseURL for minimax', () => {
+  it('TSPR_BASE_URL overrides baseURL for minimax', () => {
     const file = tmpConfigFile({ provider: 'minimax' });
-    process.env['LOCALSPRITE_BASE_URL'] = 'https://mm-override.example.com/v1';
+    process.env['TSPR_BASE_URL'] = 'https://mm-override.example.com/v1';
     const cfg = loadConfig(file);
     expect(cfg.minimax?.baseURL).toBe('https://mm-override.example.com/v1');
   });

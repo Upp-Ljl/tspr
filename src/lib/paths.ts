@@ -1,6 +1,6 @@
 /**
  * src/lib/paths.ts
- * Path helpers for ~/.localsprite/ data directory.
+ * Path helpers for ~/.tspr/ data directory.
  * On Windows, ~ resolves to %USERPROFILE%.
  */
 
@@ -8,24 +8,24 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-/** Returns the path to ~/.localsprite (the localsprite home directory). */
-export function localspriteHome(): string {
-  return path.join(os.homedir(), '.localsprite');
+/** Returns the path to ~/.tspr (the tspr home directory). */
+export function tsprHome(): string {
+  return path.join(os.homedir(), '.tspr');
 }
 
 /** Returns the path to {home}/runs — where per-run artifacts live. */
 export function runsDir(): string {
-  return path.join(localspriteHome(), 'runs');
+  return path.join(tsprHome(), 'runs');
 }
 
 /** Returns the path to {home}/db.sqlite — the SQLite state file. */
 export function dbPath(): string {
-  return path.join(localspriteHome(), 'db.sqlite');
+  return path.join(tsprHome(), 'db.sqlite');
 }
 
 /** Returns the path to {home}/config.json — user-editable config. */
 export function configPath(): string {
-  return path.join(localspriteHome(), 'config.json');
+  return path.join(tsprHome(), 'config.json');
 }
 
 /**

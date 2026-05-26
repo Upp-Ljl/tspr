@@ -39,7 +39,7 @@
 **Class**: B
 **Flagged by**: Blackbox tester (§6, gap 1) and test `PULL-ARTIFACTS-MISSING-FILE`
 **Where in surface**: B-2-17 — contains parenthetical "(if it exists)" but provides no explicit
-  contract for the case where `/tmp/localsprite-out/` does not exist or is empty.
+  contract for the case where `/tmp/tspr-out/` does not exist or is empty.
 **Where in spec**: §6.2 describes the `getArchive` mechanism; §9 notes `ERR_ARTIFACT_PULL_FAILED`
   is thrown when `getArchive()` throws — but does not distinguish between "path not found"
   (expected empty-output case) and "container stopped" (real failure).
@@ -48,7 +48,7 @@
   2. Container is stopped or archive stream errors → should throw `ERR_ARTIFACT_PULL_FAILED`
   The surface inherits this ambiguity via the parenthetical.
 **Resolution**: Add B-2-25 to surface: `pullArtifacts()` MUST resolve without throwing if
-  `/tmp/localsprite-out/` does not exist in the container or is empty. No host-side files
+  `/tmp/tspr-out/` does not exist in the container or is empty. No host-side files
   are created for absent source files.
 **Resolution ref**: New contract B-2-25 (added below in §4).
 
@@ -58,7 +58,7 @@
 
 **Class**: B
 **Flagged by**: Blackbox tester (§6, gap 2) and test `MAX-CONCURRENT-EXCEEDED`
-**Where in surface**: §6 config table lists `LOCALSPRITE_SANDBOX_MAX_CONCURRENT = 3` as an
+**Where in surface**: §6 config table lists `TSPR_SANDBOX_MAX_CONCURRENT = 3` as an
   observable env var. §4 error table has no entry for concurrency limit exceeded. The test
   can only assert `instanceof SandboxError` but not the code.
 **Where in spec**: §8 Concurrency Model mentions the `activeContainers Set` and port collision
@@ -167,7 +167,7 @@
 **Root cause**: B-2-2 was narrowly written for the pre-flight case without being generalized
   to all pre-container-creation failures.
 **Resolution**: Add B-2-31: when `ERR_IMAGE_BUILD_FAILED` is thrown, no container with label
-  `localsprite.managed = "true"` may exist as a result of that call.
+  `tspr.managed = "true"` may exist as a result of that call.
 **Resolution ref**: New contract B-2-31.
 
 ---
@@ -277,14 +277,14 @@ These are reproduced here for reference; the authoritative text is in the patche
 `02-docker-sandbox-public-surface.md` §3.
 
 ### B-2-25 pullArtifacts — silent success on absent output directory
-If `/tmp/localsprite-out/` does not exist inside the container, or the directory is
+If `/tmp/tspr-out/` does not exist inside the container, or the directory is
 empty, `pullArtifacts()` MUST resolve without throwing. No host-side files are created
 for absent source paths. Callers MUST NOT assume that a non-throwing return from
 `pullArtifacts()` implies any file was written.
 
 ### B-2-26 concurrent sandboxes — max concurrent limit error code
 When `createSandbox()` is called and the number of active sandboxes already equals
-`LOCALSPRITE_SANDBOX_MAX_CONCURRENT` (default 3), the call MUST throw `SandboxError`
+`TSPR_SANDBOX_MAX_CONCURRENT` (default 3), the call MUST throw `SandboxError`
 with `code === 'ERR_MAX_CONCURRENT_EXCEEDED'`. The error MUST be thrown before any
 container is created.
 
@@ -297,7 +297,7 @@ port binding. Applications running inside the container MUST bind to `handle.por
 ### B-2-28 SIGTERM cleanup
 If the host Node process receives SIGTERM while one or more sandboxes are in `'running'`
 state, all running containers MUST be disposed (force-killed and removed) before the
-process exits. Behavior is equivalent to SIGINT (B-2-16). No `localsprite.managed = "true"`
+process exits. Behavior is equivalent to SIGINT (B-2-16). No `tspr.managed = "true"`
 containers may be left running after the process terminates.
 
 ### B-2-29 dispose — 'stopping' state is transient and may be skipped
@@ -318,7 +318,7 @@ confirms OOM state. This is NOT a contract violation.
 
 ### B-2-31 image build failure — no container leak
 When `ERR_IMAGE_BUILD_FAILED` is thrown, no container with label
-`localsprite.managed = "true"` may exist as a result of that call.
+`tspr.managed = "true"` may exist as a result of that call.
 (Parallel guarantee to B-2-2 for the image-build failure path.)
 
 ---

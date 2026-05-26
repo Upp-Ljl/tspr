@@ -1,4 +1,4 @@
-# localsprite MCP Server — Dev Spec (Module 01)
+# tspr MCP Server — Dev Spec (Module 01)
 
 > SPEC-SPLIT artifact — dev-level detail. **Do not hand to test writer.**  
 > Companion: `01-mcp-server-public-surface.md`  
@@ -9,7 +9,7 @@
 
 ## 0. Purpose & Scope
 
-This document specifies the MCP server module (`src/mcp/` + `src/tools/`) of localsprite.
+This document specifies the MCP server module (`src/mcp/` + `src/tools/`) of tspr.
 It covers: transport, bootstrap, tool registry, each of the 8 tools, concurrency, logging,
 error handling, process lifecycle, and file layout.
 
@@ -41,7 +41,7 @@ browser pool internals, SQLite schema migration logic.
 
 ### 2.1 CLI entry point
 
-Binary: `localsprite mcp` (via `package.json` `bin.localsprite` → `dist/cli.js`, which
+Binary: `tspr mcp` (via `package.json` `bin.tspr` → `dist/cli.js`, which
 sub-dispatches to `dist/mcp/server.js`).
 
 Direct execution for development: `node dist/mcp/server.js`.
@@ -56,13 +56,13 @@ Parsed by `src/mcp/server.ts` at process startup (before `connect()`):
 | `--plan-model` | `string` | `"claude-haiku-4-5"` | cc subprocess model for planning/outline tools |
 | `--concurrency` | `number` | `1` | reserved; must be 1 in MVP-0 (validated, throws if >1) |
 | `--log-level` | `"debug"\|"info"\|"warn"\|"error"` | `"info"` | stderr verbosity |
-| `--config` | `string` | `"~/.localsprite/config.json"` | override config file path |
+| `--config` | `string` | `"~/.tspr/config.json"` | override config file path |
 
 Unknown flags are ignored with a `warn`-level stderr log (permissive for future extension).
 
 ### 2.3 Config file
 
-Path: `~/.localsprite/config.json` (resolved via `os.homedir()`).
+Path: `~/.tspr/config.json` (resolved via `os.homedir()`).
 
 If the file exists and is valid JSON, its keys are merged into the runtime config with lower
 priority than CLI flags (CLI wins). If the file is missing, the server starts with defaults
@@ -88,7 +88,7 @@ Config schema (all keys optional):
 
 On bootstrap, before `connect()`:
 
-1. Resolve DB path: `~/.localsprite/db.sqlite`.
+1. Resolve DB path: `~/.tspr/db.sqlite`.
 2. Create parent directory if absent (`fs.mkdirSync({ recursive: true })`).
 3. Open DB with `better-sqlite3`; run `PRAGMA journal_mode=WAL;` immediately.
 4. Execute `src/state/migrations.ts` which applies schema DDL idempotently using
@@ -101,7 +101,7 @@ Failure here is fatal: write error to stderr, `process.exit(1)` with code 1.
 
 ```typescript
 const server = new Server(
-  { name: "localsprite", version: pkg.version },
+  { name: "tspr", version: pkg.version },
   { capabilities: { tools: {} } }
 );
 server.setRequestHandler(ListToolsRequestSchema, handleListTools);
@@ -113,7 +113,7 @@ await server.connect(transport);
 
 After `connect()`, write a single `info` line to **stderr**:
 ```
-[localsprite] MCP server started (v<version>, model=<model>, pid=<pid>)
+[tspr] MCP server started (v<version>, model=<model>, pid=<pid>)
 ```
 
 ---
@@ -245,7 +245,7 @@ fresh ephemeral container and tears it down before returning.
 
 ## 6. The 8 Tools — Full Specification
 
-### Tool 1: `localsprite_bootstrap_tests`
+### Tool 1: `tspr_bootstrap_tests`
 
 **Purpose**: Session entry point. Validates the project path exists, detects project type
 (frontend/backend/fullstack), checks Docker is running, writes a session record to SQLite.
@@ -293,11 +293,11 @@ z.object({
 | `ERR_DOCKER_UNAVAILABLE` | Docker daemon not reachable | Start Docker Desktop |
 | `ERR_INVALID_PORT` | `localPort` out of range (caught by zod) | Use a valid port |
 
-**SQLite**: inserts a `runs` row with `tool = "localsprite_bootstrap_tests"`, `outcome = "ok"` or `"error"`.
+**SQLite**: inserts a `runs` row with `tool = "tspr_bootstrap_tests"`, `outcome = "ok"` or `"error"`.
 
 ---
 
-### Tool 2: `localsprite_generate_code_summary`
+### Tool 2: `tspr_generate_code_summary`
 
 **Purpose**: Scans the project, identifies framework, key files, and feature areas. Delegates
 heavy analysis to a `cc` subprocess with model=`planModel`. Writes `code_summary.json`.
@@ -318,7 +318,7 @@ z.object({
 2. Build a prompt listing file contents (truncated at 4000 chars each) and ask cc to produce
    a JSON code summary.
 3. Parse cc stdout as JSON; validate against `CodeSummarySchema` (zod). If invalid, retry once.
-4. Write to `{projectRootPath}/.localsprite/code_summary.json`.
+4. Write to `{projectRootPath}/.tspr/code_summary.json`.
 5. Store summary in SQLite `code_summaries` table.
 
 **Output shape** (returned as MCP content, also written to disk):
@@ -335,7 +335,7 @@ z.object({
 }
 ```
 
-**File artifacts**: `{projectRootPath}/.localsprite/code_summary.json`
+**File artifacts**: `{projectRootPath}/.tspr/code_summary.json`
 
 **Error modes**:
 
@@ -345,11 +345,11 @@ z.object({
 | `ERR_NOT_NODE_PROJECT` | Missing `package.json` |
 | `ERR_CC_FAILED` | cc subprocess exited non-zero |
 | `ERR_CC_OUTPUT_INVALID` | cc output not parseable as expected JSON (after 1 retry) |
-| `ERR_WRITE_FAILED` | Cannot write to `.localsprite/` (permissions) |
+| `ERR_WRITE_FAILED` | Cannot write to `.tspr/` (permissions) |
 
 ---
 
-### Tool 3: `localsprite_generate_standardized_prd`
+### Tool 3: `tspr_generate_standardized_prd`
 
 **Purpose**: Reads `code_summary.json` (auto-generates if missing) and produces a structured
 PRD JSON containing product overview, user stories, functional + technical requirements.
@@ -364,11 +364,11 @@ z.object({
 ```
 
 **Processing**:
-1. Read `{projectPath}/.localsprite/code_summary.json`. If missing, invoke tool 2 handler
+1. Read `{projectPath}/.tspr/code_summary.json`. If missing, invoke tool 2 handler
    internally (not a recursive MCP call—direct function call).
 2. Send code summary to cc subprocess (`planModel`) with a prompt that elicits a PRD JSON.
 3. Parse and validate against `StandardPrdSchema` (zod).
-4. Write to `{projectPath}/.localsprite/standard_prd.json`.
+4. Write to `{projectPath}/.tspr/standard_prd.json`.
 
 **Output shape**:
 
@@ -383,13 +383,13 @@ z.object({
 }
 ```
 
-**File artifacts**: `{projectPath}/.localsprite/standard_prd.json`
+**File artifacts**: `{projectPath}/.tspr/standard_prd.json`
 
 **Error modes**: same as tool 2 plus `ERR_CODE_SUMMARY_MISSING` (if internal invoke also fails).
 
 ---
 
-### Tool 4: `localsprite_generate_frontend_test_plan`
+### Tool 4: `tspr_generate_frontend_test_plan`
 
 **Purpose**: Runs N=`browserPoolSize` (default 3) Playwright headless browser agents in
 parallel. Each agent is driven by one cc subprocess that "acts as a user" exploring the
@@ -420,7 +420,7 @@ z.object({
 4. `Promise.allSettled` on N agents; collect results.
 5. Merge: deduplicate pages, union interactions.
 6. Send merged coverage to cc (`planModel`) to produce test scenarios.
-7. Write to `{projectPath}/.localsprite/frontend_test_plan.json`.
+7. Write to `{projectPath}/.tspr/frontend_test_plan.json`.
 
 **Output shape**:
 
@@ -440,7 +440,7 @@ z.object({
 }
 ```
 
-**File artifacts**: `{projectPath}/.localsprite/frontend_test_plan.json`
+**File artifacts**: `{projectPath}/.tspr/frontend_test_plan.json`
 
 **Error modes**:
 
@@ -454,7 +454,7 @@ z.object({
 
 ---
 
-### Tool 5: `localsprite_generate_backend_test_plan`
+### Tool 5: `tspr_generate_backend_test_plan`
 
 **Purpose**: Scans the project for Express/Fastify/Next API routes, produces a structured
 backend test plan with endpoint list, integration scenarios, auth scenarios, and error cases.
@@ -473,7 +473,7 @@ z.object({
 2. Read `standard_prd.json` if present (optional enrichment).
 3. Send route list + PRD to cc (`planModel`) to produce test plan JSON.
 4. Validate against `BackendTestPlanSchema`.
-5. Write to `{projectPath}/.localsprite/backend_test_plan.json`.
+5. Write to `{projectPath}/.tspr/backend_test_plan.json`.
 
 **Output shape**:
 
@@ -492,7 +492,7 @@ z.object({
 }
 ```
 
-**File artifacts**: `{projectPath}/.localsprite/backend_test_plan.json`
+**File artifacts**: `{projectPath}/.tspr/backend_test_plan.json`
 
 **Error modes**:
 
@@ -505,7 +505,7 @@ z.object({
 
 ---
 
-### Tool 6: `localsprite_generate_code_and_execute`
+### Tool 6: `tspr_generate_code_and_execute`
 
 **Purpose**: The heaviest tool. Reads the appropriate test plan (`frontend_test_plan.json`
 and/or `backend_test_plan.json`), calls cc (`model`) to generate test code, mounts the
@@ -526,7 +526,7 @@ z.object({
 **Processing**:
 
 1. **Resolve test plan**: load `frontend_test_plan.json` and/or `backend_test_plan.json`
-   from `{projectPath}/.localsprite/`. Filter by `testIds` (if non-empty).
+   from `{projectPath}/.tspr/`. Filter by `testIds` (if non-empty).
    If neither plan exists: `ERR_NO_TEST_PLAN`.
 
 2. **Cap**: if resolved scenario count > 10, truncate to 10 (first 10) and add a warning.
@@ -554,9 +554,9 @@ z.object({
      to identify the file/line range responsible.
 
 6. **Write artifacts**:
-   - `{projectPath}/.localsprite/test_results.json`
-   - `{projectPath}/.localsprite/report.html` (static HTML wrapping JSON results)
-   - Generated `.spec.ts` files: `{projectPath}/.localsprite/generated_tests/`
+   - `{projectPath}/.tspr/test_results.json`
+   - `{projectPath}/.tspr/report.html` (static HTML wrapping JSON results)
+   - Generated `.spec.ts` files: `{projectPath}/.tspr/generated_tests/`
 
 7. **SQLite**: insert rows into `test_results` for each test case.
 
@@ -590,9 +590,9 @@ z.object({
 ```
 
 **File artifacts**:
-- `{projectPath}/.localsprite/test_results.json`
-- `{projectPath}/.localsprite/report.html`
-- `{projectPath}/.localsprite/generated_tests/*.spec.ts`
+- `{projectPath}/.tspr/test_results.json`
+- `{projectPath}/.tspr/report.html`
+- `{projectPath}/.tspr/generated_tests/*.spec.ts`
 
 **Error modes**:
 
@@ -604,11 +604,11 @@ z.object({
 | `ERR_CONTAINER_CRASH` | Container exited with code ≠ 0 before tests ran |
 | `ERR_CC_FAILED` | Code-gen cc subprocess failed |
 | `ERR_TOOL_TIMEOUT` | Overall execution exceeded `executeTimeoutMs` |
-| `ERR_WRITE_FAILED` | Cannot write artifacts to `.localsprite/` |
+| `ERR_WRITE_FAILED` | Cannot write artifacts to `.tspr/` |
 
 ---
 
-### Tool 7: `localsprite_open_test_result_dashboard`
+### Tool 7: `tspr_open_test_result_dashboard`
 
 **Purpose**: Opens a local static dashboard showing test run history. Returns a `file://`
 URL (or `http://localhost:{dashboardPort}` if the embedded HTTP server is active) that
@@ -622,7 +622,7 @@ z.object({})   // no required inputs
 
 **Processing**:
 1. Query SQLite `runs` + `test_results` for last 20 runs.
-2. Render to `~/.localsprite/dashboard.html` using a bundled Handlebars template.
+2. Render to `~/.tspr/dashboard.html` using a bundled Handlebars template.
 3. Embed Playwright trace viewer URL links where trace files exist.
 4. Return the `file://` URL.
 
@@ -637,7 +637,7 @@ z.object({})   // no required inputs
 }
 ```
 
-**File artifacts**: `~/.localsprite/dashboard.html`
+**File artifacts**: `~/.tspr/dashboard.html`
 
 **Error modes**:
 
@@ -648,7 +648,7 @@ z.object({})   // no required inputs
 
 ---
 
-### Tool 8: `localsprite_rerun_tests` (beta)
+### Tool 8: `tspr_rerun_tests` (beta)
 
 **Purpose**: Reruns the tests from the most recent `generate_code_and_execute` call for
 the given project. Uses the existing generated `.spec.ts` files — does not regenerate code.
@@ -665,7 +665,7 @@ z.object({
 **Processing**:
 1. Look up the most recent `test_results` run for `projectPath` from SQLite.
    If none: `ERR_NO_PRIOR_RUN`.
-2. Verify generated test files still exist in `{projectPath}/.localsprite/generated_tests/`.
+2. Verify generated test files still exist in `{projectPath}/.tspr/generated_tests/`.
    If missing: `ERR_GENERATED_TESTS_MISSING`.
 3. Re-execute Docker container with same test files (same flow as tool 6, steps 4–7),
    but skipping code generation step.
@@ -673,7 +673,7 @@ z.object({
 
 **Output shape**: same as tool 6 output shape.
 
-**File artifacts**: updates `{projectPath}/.localsprite/test_results.json` and `report.html`.
+**File artifacts**: updates `{projectPath}/.tspr/test_results.json` and `report.html`.
 
 **Error modes**:
 
@@ -783,14 +783,14 @@ src/
 │   └── registry.ts        — TOOL_DEFINITIONS[], TOOL_MAP<string, ToolDefinition>
 │
 ├── tools/
-│   ├── bootstrap.ts       — tool 1: localsprite_bootstrap_tests
-│   ├── codeSummary.ts     — tool 2: localsprite_generate_code_summary
-│   ├── prd.ts             — tool 3: localsprite_generate_standardized_prd
-│   ├── frontendPlan.ts    — tool 4: localsprite_generate_frontend_test_plan
-│   ├── backendPlan.ts     — tool 5: localsprite_generate_backend_test_plan
-│   ├── generateAndExecute.ts — tool 6: localsprite_generate_code_and_execute
-│   ├── dashboard.ts       — tool 7: localsprite_open_test_result_dashboard
-│   └── rerunTests.ts      — tool 8: localsprite_rerun_tests
+│   ├── bootstrap.ts       — tool 1: tspr_bootstrap_tests
+│   ├── codeSummary.ts     — tool 2: tspr_generate_code_summary
+│   ├── prd.ts             — tool 3: tspr_generate_standardized_prd
+│   ├── frontendPlan.ts    — tool 4: tspr_generate_frontend_test_plan
+│   ├── backendPlan.ts     — tool 5: tspr_generate_backend_test_plan
+│   ├── generateAndExecute.ts — tool 6: tspr_generate_code_and_execute
+│   ├── dashboard.ts       — tool 7: tspr_open_test_result_dashboard
+│   └── rerunTests.ts      — tool 8: tspr_rerun_tests
 │
 ├── engine/
 │   └── ccClient.ts        — cc subprocess wrapper (spawn, timeout, parse stdout)
@@ -845,7 +845,7 @@ Error: thrown as `McpError` (SDK turns it into JSON-RPC error; `isError` path no
 ```
 process defaults
     ↓  (overridden by)
-~/.localsprite/config.json
+~/.tspr/config.json
     ↓  (overridden by)
 CLI flags (--model, --log-level, etc.)
 ```

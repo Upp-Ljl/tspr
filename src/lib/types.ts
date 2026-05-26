@@ -13,7 +13,7 @@ export type ClaudeModel = 'haiku' | 'sonnet' | 'opus';
 // Session / run identity
 // ─────────────────────────────────────────────
 
-/** A session bootstrapped via localsprite_bootstrap_tests. */
+/** A session bootstrapped via tspr_bootstrap_tests. */
 export interface Session {
   id: string;           // UUID v4
   projectPath: string;

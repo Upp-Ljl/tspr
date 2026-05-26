@@ -18,7 +18,7 @@ beforeAll(async () => {
     const { execSync } = await import('child_process');
     execSync('docker info', { stdio: 'pipe', timeout: 5000 });
     // Ensure image exists
-    execSync('docker image inspect localsprite/sandbox-node:24', { stdio: 'pipe', timeout: 5000 });
+    execSync('docker image inspect tspr/sandbox-node:24', { stdio: 'pipe', timeout: 5000 });
   } catch {
     dockerAvailable = false;
     console.warn('[create.test] Docker or sandbox image not available — skipping Docker tests');
@@ -80,7 +80,7 @@ describe('createSandbox — success path', () => {
     }
   });
 
-  it('SANDBOX-LABELS-OBSERVABLE: containers carry localsprite.managed=true label (§8)', async () => {
+  it('SANDBOX-LABELS-OBSERVABLE: containers carry tspr.managed=true label (§8)', async () => {
     if (!dockerAvailable) return;
     const projectPath = await makeTempProject();
     const handle = await createSandbox({ projectPath, projectType: 'backend' });
@@ -89,8 +89,8 @@ describe('createSandbox — success path', () => {
       const inspectData = await dockerInspect(handle.id) as Record<string, unknown> | null;
       expect(inspectData).not.toBeNull();
       const config = (inspectData as Record<string, Record<string, Record<string, string>>>).Config;
-      expect(config?.Labels?.['localsprite.managed']).toBe('true');
-      expect(config?.Labels?.['localsprite.run-id']).toBe(handle.runId);
+      expect(config?.Labels?.['tspr.managed']).toBe('true');
+      expect(config?.Labels?.['tspr.run-id']).toBe(handle.runId);
     } finally {
       await handle.dispose();
     }
@@ -134,8 +134,8 @@ describe('createSandbox — success path', () => {
 
   it('MAX-CONCURRENT-EXCEEDED: throws ERR_MAX_CONCURRENT_EXCEEDED at limit (B-2-26)', async () => {
     if (!dockerAvailable) return;
-    const originalMax = process.env.LOCALSPRITE_SANDBOX_MAX_CONCURRENT;
-    process.env.LOCALSPRITE_SANDBOX_MAX_CONCURRENT = '1';
+    const originalMax = process.env.TSPR_SANDBOX_MAX_CONCURRENT;
+    process.env.TSPR_SANDBOX_MAX_CONCURRENT = '1';
     let h1: Awaited<ReturnType<typeof createSandbox>> | undefined;
 
     try {
@@ -146,17 +146,17 @@ describe('createSandbox — success path', () => {
     } finally {
       await h1?.dispose();
       if (originalMax === undefined) {
-        delete process.env.LOCALSPRITE_SANDBOX_MAX_CONCURRENT;
+        delete process.env.TSPR_SANDBOX_MAX_CONCURRENT;
       } else {
-        process.env.LOCALSPRITE_SANDBOX_MAX_CONCURRENT = originalMax;
+        process.env.TSPR_SANDBOX_MAX_CONCURRENT = originalMax;
       }
     }
   });
 
   it('ERR-IMAGE-BUILD-FAILED: nonexistent image throws ERR_IMAGE_BUILD_FAILED (§4)', async () => {
     if (!dockerAvailable) return;
-    const originalImage = process.env.LOCALSPRITE_SANDBOX_IMAGE;
-    process.env.LOCALSPRITE_SANDBOX_IMAGE = 'nonexistent-image:impossible-tag-12345';
+    const originalImage = process.env.TSPR_SANDBOX_IMAGE;
+    process.env.TSPR_SANDBOX_IMAGE = 'nonexistent-image:impossible-tag-12345';
 
     // Clear image cache so it re-checks
     const { clearImageCache } = await import('../../src/sandbox/image.js');
@@ -168,9 +168,9 @@ describe('createSandbox — success path', () => {
       ).rejects.toMatchObject({ code: 'ERR_IMAGE_BUILD_FAILED' });
     } finally {
       if (originalImage === undefined) {
-        delete process.env.LOCALSPRITE_SANDBOX_IMAGE;
+        delete process.env.TSPR_SANDBOX_IMAGE;
       } else {
-        process.env.LOCALSPRITE_SANDBOX_IMAGE = originalImage;
+        process.env.TSPR_SANDBOX_IMAGE = originalImage;
       }
       clearImageCache();
     }

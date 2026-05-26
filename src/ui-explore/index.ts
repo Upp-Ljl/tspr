@@ -59,7 +59,7 @@ function defaultLogger(): Logger {
 function defaultCcClient(): CcClient {
   return {
     async run({ model, prompt, timeoutMs }) {
-      const bin = process.env['LOCALSPRITE_CC_BIN'] ?? 'claude';
+      const bin = process.env['TSPR_CC_BIN'] ?? 'claude';
       const { stdout } = await execFileAsync(
         bin,
         ['--model', model, '-p', prompt],
@@ -136,7 +136,7 @@ export async function exploreUI(inputs: {
   const runId = options.runId ?? `run-${uuidv4()}`;
   const defaultRunDir = path.join(
     process.env['HOME'] ?? process.env['USERPROFILE'] ?? '/tmp',
-    '.localsprite', 'runs', runId, 'ui-exploration',
+    '.tspr', 'runs', runId, 'ui-exploration',
   );
   const runDir = options.runDir ?? defaultRunDir;
 
@@ -396,10 +396,10 @@ async function checkBaseUrlReachable(baseUrl: string): Promise<void> {
 
 async function writeTestPlanJson(projectPath: string, report: ExplorationReport): Promise<void> {
   try {
-    const localspriteDir = path.join(projectPath, '.localsprite');
-    await mkdir(localspriteDir, { recursive: true });
+    const tsprDir = path.join(projectPath, '.tspr');
+    await mkdir(tsprDir, { recursive: true });
 
-    const finalPath = path.join(localspriteDir, 'frontend_test_plan.json');
+    const finalPath = path.join(tsprDir, 'frontend_test_plan.json');
     const tmpPath = finalPath + '.tmp.' + Date.now();
 
     await writeFile(tmpPath, JSON.stringify(report, null, 2), 'utf-8');

@@ -1,5 +1,5 @@
 /**
- * Tool 4: localsprite_generate_frontend_test_plan
+ * Tool 4: tspr_generate_frontend_test_plan
  *
  * Runs N browser agents in parallel to explore the app and generates a frontend test plan.
  */
@@ -48,7 +48,7 @@ async function frontendPlanHandler(args: unknown, ctx: ServerContext): Promise<T
     const insert = ctx.db.prepare(
       `INSERT INTO runs (tool, params_hash, started_at) VALUES (?, ?, ?)`,
     );
-    const result = insert.run('localsprite_generate_frontend_test_plan', paramsHash, startedAt);
+    const result = insert.run('tspr_generate_frontend_test_plan', paramsHash, startedAt);
     runId = result.lastInsertRowid;
   } catch (err) {
     ctx.logger.warn('Failed to insert run row', { err });
@@ -63,7 +63,7 @@ async function frontendPlanHandler(args: unknown, ctx: ServerContext): Promise<T
     try {
       const row = ctx.db.prepare(
         `SELECT session_id, params_hash FROM runs WHERE tool = ? AND outcome = ? ORDER BY id DESC LIMIT 1`,
-      ).get('localsprite_bootstrap_tests', 'ok') as { session_id: string; params_hash: string } | undefined;
+      ).get('tspr_bootstrap_tests', 'ok') as { session_id: string; params_hash: string } | undefined;
 
       if (row) {
         // We store session by projectPath; let's look for the session with matching projectPath
@@ -71,7 +71,7 @@ async function frontendPlanHandler(args: unknown, ctx: ServerContext): Promise<T
         // Let's use sessions table approach: query all bootstrap runs and find most recent for this projectPath
         const allBootstraps = ctx.db.prepare(
           `SELECT session_id, params_hash FROM runs WHERE tool = ? AND outcome = ? ORDER BY id DESC`,
-        ).all('localsprite_bootstrap_tests', 'ok') as Array<{ session_id: string; params_hash: string }>;
+        ).all('tspr_bootstrap_tests', 'ok') as Array<{ session_id: string; params_hash: string }>;
 
         // Find the most recent session for this projectPath by querying sessions table
         const sessionRow = ctx.db.prepare(
@@ -93,7 +93,7 @@ async function frontendPlanHandler(args: unknown, ctx: ServerContext): Promise<T
         {
           code: 'ERR_NOT_BOOTSTRAPPED',
           projectPath,
-          suggestion: 'Call localsprite_bootstrap_tests first for this project path.',
+          suggestion: 'Call tspr_bootstrap_tests first for this project path.',
         },
       );
     }
@@ -213,7 +213,7 @@ Return ONLY valid JSON.`;
       // best-effort; return empty scenarios
     }
 
-    const outputDir = path.join(projectPath, '.localsprite');
+    const outputDir = path.join(projectPath, '.tspr');
     fs.mkdirSync(outputDir, { recursive: true });
     const outputPath = path.join(outputDir, 'frontend_test_plan.json');
 
@@ -261,7 +261,7 @@ Return ONLY valid JSON.`;
 }
 
 export const frontendPlanTool: ToolDefinition = {
-  name: 'localsprite_generate_frontend_test_plan',
+  name: 'tspr_generate_frontend_test_plan',
   description:
     'Runs parallel browser agents to explore the running app and generates a frontend test plan with navigation, form, visual-regression, and interaction scenarios.',
   inputSchema: frontendPlanInputSchema,

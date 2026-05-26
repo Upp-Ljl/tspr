@@ -76,14 +76,14 @@ describe('openDb + initSchema', () => {
     db.prepare(
       `INSERT INTO runs (id, tool_name, project_path, started_at, status)
        VALUES (?, ?, ?, ?, ?)`,
-    ).run('run-id-1', 'localsprite_bootstrap_tests', '/tmp/proj', new Date().toISOString(), 'ok');
+    ).run('run-id-1', 'tspr_bootstrap_tests', '/tmp/proj', new Date().toISOString(), 'ok');
 
     const row = db
       .prepare<{ id: string; tool_name: string }>('SELECT id, tool_name FROM runs WHERE id = ?')
       .get('run-id-1');
 
     expect(row?.id).toBe('run-id-1');
-    expect(row?.tool_name).toBe('localsprite_bootstrap_tests');
+    expect(row?.tool_name).toBe('tspr_bootstrap_tests');
   });
 
   it('run() returns changes count', () => {
@@ -92,7 +92,7 @@ describe('openDb + initSchema', () => {
         `INSERT INTO runs (id, tool_name, started_at, status)
          VALUES (?, ?, ?, ?)`,
       )
-      .run('run-id-2', 'localsprite_rerun_tests', new Date().toISOString(), 'in-progress');
+      .run('run-id-2', 'tspr_rerun_tests', new Date().toISOString(), 'in-progress');
 
     expect(info.changes).toBe(1);
   });
@@ -103,7 +103,7 @@ describe('openDb + initSchema', () => {
         `INSERT INTO runs (id, tool_name, started_at, status)
          VALUES (?, ?, ?, ?)`,
       )
-      .run('run-id-3', 'localsprite_dashboard', new Date().toISOString(), 'ok');
+      .run('run-id-3', 'tspr_dashboard', new Date().toISOString(), 'ok');
 
     expect(typeof info.lastInsertRowid).toMatch(/^(number|bigint)$/);
   });

@@ -1,7 +1,7 @@
-# demo-app — TodoMVC fixture for localsprite
+# demo-app — TodoMVC fixture for tspr
 
-Minimal Express + React TodoMVC. Used by `scripts/smoke-localsprite.mjs` to
-give localsprite a real running app to test against.
+Minimal Express + React TodoMVC. Used by `scripts/smoke-tspr.mjs` to
+give tspr a real running app to test against.
 
 ## Boot
 
@@ -30,7 +30,7 @@ npm run dev
 | DELETE | /api/todos/:id  | Delete todo              |
 | GET    | /health         | Liveness probe           |
 
-## Known bugs (for localsprite to find)
+## Known bugs (for tspr to find)
 
 **BUG-001 — PUT /api/todos/:id returns 200 for non-existent ids**
 

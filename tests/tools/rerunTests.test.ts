@@ -1,5 +1,5 @@
 /**
- * Tests for Tool 8: localsprite_rerun_tests
+ * Tests for Tool 8: tspr_rerun_tests
  * Covers: B-8-1 through B-8-6
  */
 import { describe, it, expect, afterEach } from 'vitest';
@@ -14,7 +14,7 @@ import {
   type TestProject,
 } from '../mcp/helpers.js';
 
-describe('localsprite_rerun_tests', () => {
+describe('tspr_rerun_tests', () => {
   const projects: TestProject[] = [];
 
   afterEach(() => {
@@ -29,15 +29,15 @@ describe('localsprite_rerun_tests', () => {
 
   function makeProjectWithPriorRun(): TestProject {
     const p = mkProject();
-    const localspriteDir = path.join(p.projectPath, '.localsprite');
-    const generatedTestsDir = path.join(localspriteDir, 'generated_tests');
+    const tsprDir = path.join(p.projectPath, '.tspr');
+    const generatedTestsDir = path.join(tsprDir, 'generated_tests');
     fs.mkdirSync(generatedTestsDir, { recursive: true });
 
     // Create a fake test_results.json (simulating prior run)
     const fakeResults = {
       status: 'ok',
-      outputPath: path.join(localspriteDir, 'test_results.json'),
-      reportPath: path.join(localspriteDir, 'report.html'),
+      outputPath: path.join(tsprDir, 'test_results.json'),
+      reportPath: path.join(tsprDir, 'report.html'),
       totalTests: 1,
       passed: 1,
       failed: 0,
@@ -45,7 +45,7 @@ describe('localsprite_rerun_tests', () => {
       warnings: [],
       failures: [],
     };
-    fs.writeFileSync(path.join(localspriteDir, 'test_results.json'), JSON.stringify(fakeResults), 'utf-8');
+    fs.writeFileSync(path.join(tsprDir, 'test_results.json'), JSON.stringify(fakeResults), 'utf-8');
 
     // Create fake .spec.ts file
     fs.writeFileSync(
@@ -60,7 +60,7 @@ describe('localsprite_rerun_tests', () => {
       routesDiscovered: 1,
       warnings: [],
     };
-    fs.writeFileSync(path.join(localspriteDir, 'backend_test_plan.json'), JSON.stringify(plan), 'utf-8');
+    fs.writeFileSync(path.join(tsprDir, 'backend_test_plan.json'), JSON.stringify(plan), 'utf-8');
 
     return p;
   }
@@ -82,13 +82,13 @@ describe('localsprite_rerun_tests', () => {
   // ─── B-8-2: deleted generated test files → ERR_GENERATED_TESTS_MISSING ────
   it('RERUN-002: deleted generated tests returns ERR_GENERATED_TESTS_MISSING', async () => {
     const p = mkProject();
-    const localspriteDir = path.join(p.projectPath, '.localsprite');
-    const generatedTestsDir = path.join(localspriteDir, 'generated_tests');
+    const tsprDir = path.join(p.projectPath, '.tspr');
+    const generatedTestsDir = path.join(tsprDir, 'generated_tests');
     fs.mkdirSync(generatedTestsDir, { recursive: true });
 
     // Create test_results.json but NOT .spec.ts files
     const fakeResults = { status: 'ok', totalTests: 1 };
-    fs.writeFileSync(path.join(localspriteDir, 'test_results.json'), JSON.stringify(fakeResults), 'utf-8');
+    fs.writeFileSync(path.join(tsprDir, 'test_results.json'), JSON.stringify(fakeResults), 'utf-8');
 
     const ctx = makeContext();
     try {
@@ -137,8 +137,8 @@ describe('localsprite_rerun_tests', () => {
   // ─── B-8-4: test_results.json is updated ──────────────────────────────────
   it('RERUN-004 (mock): test_results.json is updated after rerun', async () => {
     const p = makeProjectWithPriorRun();
-    const localspriteDir = path.join(p.projectPath, '.localsprite');
-    const testResultsPath = path.join(localspriteDir, 'test_results.json');
+    const tsprDir = path.join(p.projectPath, '.tspr');
+    const testResultsPath = path.join(tsprDir, 'test_results.json');
 
     // Get initial mtime
     const statBefore = fs.statSync(testResultsPath);

@@ -1,4 +1,4 @@
-# localsprite MCP Server — SPEC-SPLIT Comparison Report (Module 01)
+# tspr MCP Server — SPEC-SPLIT Comparison Report (Module 01)
 
 > SPEC-SPLIT artifact — step 4 output.
 > Author: comparison + patch worker (sonnet).
@@ -46,9 +46,9 @@ RESOLUTION REF: surface — new contract B-E-6 added in §9.
 ### GAP: container-label-unknown
 CLASS: B
 WHERE TESTS FLAGGED IT: EXECUTE-012 (NOTES section)
-WHAT'S MISSING / WRONG: B-6-12 says "no Docker container spawned during the call is still running" but gives no way to identify localsprite's containers. To test this, a caller must diff ALL Docker containers before/after, which is fragile in environments with other Docker activity. The surface needs to expose the container identification mechanism — a label, name prefix, or network — so tests can filter precisely.
+WHAT'S MISSING / WRONG: B-6-12 says "no Docker container spawned during the call is still running" but gives no way to identify tspr's containers. To test this, a caller must diff ALL Docker containers before/after, which is fragile in environments with other Docker activity. The surface needs to expose the container identification mechanism — a label, name prefix, or network — so tests can filter precisely.
 ROOT CAUSE: The surface author wrote B-6-12 from the perspective of the behavior ("containers are cleaned up") without considering how a test or caller would verify it from outside. The implementation detail (docker.ts tracker set) is invisible to the test writer by design, but the observable artifact (container label) should have been promoted to the surface.
-RESOLUTION: Patch surface — add contract specifying the Docker label used to identify localsprite containers. The spec §9.2 mentions a tracker Set but no label. Adding the label to the surface also drives the implementation to use a consistent label.
+RESOLUTION: Patch surface — add contract specifying the Docker label used to identify tspr containers. The spec §9.2 mentions a tracker Set but no label. Adding the label to the surface also drives the implementation to use a consistent label.
 RESOLUTION REF: surface — new contract B-6-13 added in Group B-6.
 
 ---
@@ -56,7 +56,7 @@ RESOLUTION REF: surface — new contract B-6-13 added in Group B-6.
 ### GAP: frontend-plan-port-session-binding
 CLASS: B
 WHERE TESTS FLAGGED IT: FEPLAN-002 (NOTES), FEPLAN-001 (NOTES)
-WHAT'S MISSING / WRONG: `localsprite_generate_frontend_test_plan` has no `localPort` parameter; it must read the port from session state. The surface doesn't say: (a) how session state is keyed (by `projectPath`? by `sessionId`?), and (b) if a project is bootstrapped twice with different ports, which port does the frontend plan tool use? FEPLAN-002 (ERR_APP_NOT_REACHABLE) requires the tester to know which port is being probed. Without this contract, the test setup is ambiguous.
+WHAT'S MISSING / WRONG: `tspr_generate_frontend_test_plan` has no `localPort` parameter; it must read the port from session state. The surface doesn't say: (a) how session state is keyed (by `projectPath`? by `sessionId`?), and (b) if a project is bootstrapped twice with different ports, which port does the frontend plan tool use? FEPLAN-002 (ERR_APP_NOT_REACHABLE) requires the tester to know which port is being probed. Without this contract, the test setup is ambiguous.
 ROOT CAUSE: The surface author wrote B-4-1 (ERR_NOT_BOOTSTRAPPED) and B-4-2 (ERR_APP_NOT_REACHABLE) without documenting the session lookup rule. The lookup logic is in the spec (§6 tool 4: "Look up active session from SQLite to get localPort and type"), but the surface omitted the keying rule.
 RESOLUTION: Patch surface — add contract specifying that the port is taken from the most recent successful bootstrap for the same `projectPath`.
 RESOLUTION REF: surface — new contract B-4-7 added in Group B-4.
@@ -66,7 +66,7 @@ RESOLUTION REF: surface — new contract B-4-7 added in Group B-4.
 ### GAP: rerun-test-id-filtering
 CLASS: B
 WHERE TESTS FLAGGED IT: RERUN-003 (NOTES)
-WHAT'S MISSING / WRONG: `localsprite_rerun_tests` has only `projectPath` as a parameter (no `testIds`). The surface says rerun has "same shape" as tool 6 output. But the surface does not specify what happens when the prior `generate_code_and_execute` call used a `testIds` filter: does rerun replay only those IDs? Or does it run the full plan? This is a real behavioral decision a caller needs to know.
+WHAT'S MISSING / WRONG: `tspr_rerun_tests` has only `projectPath` as a parameter (no `testIds`). The surface says rerun has "same shape" as tool 6 output. But the surface does not specify what happens when the prior `generate_code_and_execute` call used a `testIds` filter: does rerun replay only those IDs? Or does it run the full plan? This is a real behavioral decision a caller needs to know.
 ROOT CAUSE: The surface author described the rerun output shape but not its scope definition. The spec §6 tool 8 says "Uses the existing generated .spec.ts files — does not regenerate code" — the generated files reflect whatever subset was generated in the prior run. But this chain of inference is not in the surface.
 RESOLUTION: Patch surface — add contract explicitly stating that rerun executes exactly the same test files produced by the most recent `generate_code_and_execute` call, including any testIds scoping that was active.
 RESOLUTION REF: surface — new contract B-8-6 added in Group B-8.
@@ -76,7 +76,7 @@ RESOLUTION REF: surface — new contract B-8-6 added in Group B-8.
 ### GAP: session-scope-multi-project
 CLASS: B
 WHERE TESTS FLAGGED IT: FEPLAN-001 (NOTES), GAP section §4
-WHAT'S MISSING / WRONG: The surface does not say whether session state from `localsprite_bootstrap_tests` is persisted across server restarts (SQLite-backed) or lost on process exit (in-memory). This matters critically for test setup: if sessions are in-memory, a test for ERR_NOT_BOOTSTRAPPED just needs a fresh server process with a new projectPath; if sessions are persisted in SQLite, a test must use a projectPath that has never been bootstrapped in any server run.
+WHAT'S MISSING / WRONG: The surface does not say whether session state from `tspr_bootstrap_tests` is persisted across server restarts (SQLite-backed) or lost on process exit (in-memory). This matters critically for test setup: if sessions are in-memory, a test for ERR_NOT_BOOTSTRAPPED just needs a fresh server process with a new projectPath; if sessions are persisted in SQLite, a test must use a projectPath that has never been bootstrapped in any server run.
 ROOT CAUSE: The surface author assumed test writers would infer from the startup description that the server initializes SQLite. But "SQLite is initialized" does not tell the test writer what is stored in it or whether sessions are one of those things. The spec §2.4 and §7 are clear (SQLite stores runs, test_results, code_summaries — not sessions explicitly), but sessions are a `runs` table concept via `session_id`. The surface omitted the persistence scope.
 RESOLUTION: Patch surface — add contract clarifying that session state is persisted in SQLite and survives server restarts, so ERR_NOT_BOOTSTRAPPED is keyed by projectPath presence in persistent state.
 RESOLUTION REF: surface — new contract B-4-8 added in Group B-4.
@@ -142,7 +142,7 @@ All patches are to `01-mcp-server-public-surface.md`. No spec changes were requi
 | §9, after B-E-5 | Added B-E-6: ERR_INVALID_PORT uses -32602 | Gap `invalid-port-rpc-code` — Class B |
 | §6 Group B-4, after B-4-6 | Added B-4-7: port lookup uses most-recent-bootstrap for projectPath | Gap `frontend-plan-port-session-binding` — Class B |
 | §6 Group B-4, after B-4-7 | Added B-4-8: session state is SQLite-persisted, survives restarts | Gap `session-scope-multi-project` — Class B |
-| §6 Group B-6, after B-6-12 | Added B-6-13: localsprite Docker containers labeled with `localsprite=true` | Gap `container-label-unknown` — Class B |
+| §6 Group B-6, after B-6-12 | Added B-6-13: tspr Docker containers labeled with `tspr=true` | Gap `container-label-unknown` — Class B |
 | §6 Group B-6, after B-6-13 | Added B-6-14: status when all tests skipped | Gap `spec-tool6-status-logic-inconsistency` — Class C |
 | §6 Group B-7, after B-7-4 | Added B-7-5: runCount definition (all tool calls, success+error) | Gap `dashboard-runcount-definition` — Class B |
 | §6 Group B-8, after B-8-5 | Added B-8-6: rerun replays same test file set as prior generate_code_and_execute | Gap `rerun-test-id-filtering` — Class B |
@@ -157,7 +157,7 @@ All patches are to `01-mcp-server-public-surface.md`. No spec changes were requi
 | B-E-6 | `ERR_INVALID_PORT` returns JSON-RPC error code -32602 (not -32603) because port range is a parameter constraint |
 | B-4-7 | Frontend plan tool reads the port from the most recent successful bootstrap call with the same `projectPath` |
 | B-4-8 | Bootstrap session state is persisted in SQLite and survives server restarts; session lookup for B-4-1 is against persistent state |
-| B-6-13 | Every Docker container spawned by localsprite carries the label `localsprite=true`; use `docker ps -a --filter label=localsprite` to enumerate them |
+| B-6-13 | Every Docker container spawned by tspr carries the label `tspr=true`; use `docker ps -a --filter label=tspr` to enumerate them |
 | B-6-14 | When `passed = 0`, `failed = 0`, and `skipped > 0`, `status = "ok"` (no failures occurred) |
 | B-7-5 | `runCount` counts all tool invocations (all 8 tools, success and structured-error outcomes) that have a completed row in run history; JSON-RPC errors returned before execution began are not counted |
 | B-8-6 | A rerun executes exactly the `.spec.ts` files generated by the most recent `generate_code_and_execute` call for this `projectPath`, including any `testIds` scoping that was active in that call |
@@ -189,7 +189,7 @@ Every B-* contract in the surface was checked against the Coverage Map (test doc
 | B-E-6 | ERROR-006: ERR_INVALID_PORT returns -32602 not -32603 |
 | B-4-7 | FEPLAN-007: double-bootstrap different ports; plan tool uses second port |
 | B-4-8 | FEPLAN-008: restart server after bootstrap; frontend plan finds session |
-| B-6-13 | EXECUTE-013: containers labeled localsprite=true appear in docker filter before call returns |
+| B-6-13 | EXECUTE-013: containers labeled tspr=true appear in docker filter before call returns |
 | B-6-14 | EXECUTE-014: all-skipped run returns status=ok |
 | B-7-5 | DASH-005: failed bootstrap call increments runCount |
 | B-8-6 | RERUN-006: rerun after filtered execute (testIds=[x]) reruns only x |

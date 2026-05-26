@@ -1,5 +1,5 @@
 /**
- * Tool 3: localsprite_generate_standardized_prd
+ * Tool 3: tspr_generate_standardized_prd
  *
  * Reads code_summary.json (auto-generates if missing) and produces a structured PRD.
  */
@@ -29,7 +29,7 @@ async function prdHandler(args: unknown, ctx: ServerContext): Promise<ToolResult
     const insert = ctx.db.prepare(
       `INSERT INTO runs (tool, params_hash, started_at) VALUES (?, ?, ?)`,
     );
-    const result = insert.run('localsprite_generate_standardized_prd', paramsHash, startedAt);
+    const result = insert.run('tspr_generate_standardized_prd', paramsHash, startedAt);
     runId = result.lastInsertRowid;
   } catch (err) {
     ctx.logger.warn('Failed to insert run row', { err });
@@ -62,7 +62,7 @@ async function prdHandler(args: unknown, ctx: ServerContext): Promise<ToolResult
       );
     }
 
-    const codeSummaryPath = path.join(projectPath, '.localsprite', 'code_summary.json');
+    const codeSummaryPath = path.join(projectPath, '.tspr', 'code_summary.json');
     let codeSummary: string;
     if (fs.existsSync(codeSummaryPath)) {
       codeSummary = fs.readFileSync(codeSummaryPath, 'utf-8');
@@ -120,7 +120,7 @@ ${codeSummary}`;
       );
     }
 
-    const outputDir = path.join(projectPath, '.localsprite');
+    const outputDir = path.join(projectPath, '.tspr');
     fs.mkdirSync(outputDir, { recursive: true });
     const outputPath = path.join(outputDir, 'standard_prd.json');
 
@@ -179,7 +179,7 @@ ${codeSummary}`;
 }
 
 export const prdTool: ToolDefinition = {
-  name: 'localsprite_generate_standardized_prd',
+  name: 'tspr_generate_standardized_prd',
   description:
     'Reads code_summary.json (auto-generates if missing) and produces a structured PRD with user stories, functional and technical requirements.',
   inputSchema: prdInputSchema,

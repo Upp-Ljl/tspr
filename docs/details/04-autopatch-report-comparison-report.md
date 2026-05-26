@@ -58,7 +58,7 @@ These behaviors are described in `04-autopatch-report-spec.md` but have no corre
 
 ### A-3: TestSprite compat file output
 
-**Source**: Spec §9 documents the full TestSprite compat schema mapping triggered by `LOCALSPRITE_EMIT_TESTSPRITE_COMPAT=1`.
+**Source**: Spec §9 documents the full TestSprite compat schema mapping triggered by `TSPR_EMIT_TESTSPRITE_COMPAT=1`.
 
 **Surface exposure**: Not mentioned in the public surface. §7 ("What Is NOT in This Surface") does not explicitly exclude it either.
 

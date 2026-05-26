@@ -12,7 +12,7 @@
 ## 1. Module Entry Point
 
 ```ts
-import { createSandbox, withSandbox, SandboxError } from 'localsprite/sandbox';
+import { createSandbox, withSandbox, SandboxError } from 'tspr/sandbox';
 ```
 
 ---
@@ -48,7 +48,7 @@ interface SandboxHandle {
   /** Docker container ID (64-char hex string). Unique per process run. */
   readonly id: string;
 
-  /** UUID identifying this test run. Used as a key in ~/.localsprite/runs/. */
+  /** UUID identifying this test run. Used as a key in ~/.tspr/runs/. */
   readonly runId: string;
 
   /** Allocated host TCP port forwarded into the container. */
@@ -143,7 +143,7 @@ The error object MUST carry an `installUrl` string property pointing to Docker i
 
 ### B-2-2 Pre-flight: error thrown before any container is created
 When `ERR_DOCKER_UNAVAILABLE` is thrown, no container must exist in Docker with label
-`localsprite.managed = "true"` as a result of that call.
+`tspr.managed = "true"` as a result of that call.
 (Pre-flight failure is clean — no partial state.)
 
 ### B-2-3 Successful create returns running handle
@@ -214,7 +214,7 @@ After TTL expiry, `handle.status` MUST become `'disposed'`.
 ### B-2-16 SIGINT cleanup (POSIX only)
 If the host Node process receives SIGINT while one or more sandboxes are in `'running'`
 state, all running containers MUST be disposed (force-killed and removed) before the
-process exits. No `localsprite.managed = "true"` containers may be left running.
+process exits. No `tspr.managed = "true"` containers may be left running.
 
 **Platform note**: Applies to Linux/macOS. On Windows, Node's `child_process.kill(signal)`
 maps SIGINT/SIGTERM to forceful termination — user-space handlers do not fire. Container
@@ -222,7 +222,7 @@ cleanup on Windows falls back to TTL expiry (B-2-15) and the `beforeExit` handle
 graceful exits; abrupt parent-kill scenarios on Windows may leak containers until TTL.
 
 ### B-2-17 pullArtifacts — files land in runDir
-After `pullArtifacts()` resolves, the file `/tmp/localsprite-out/test_results.json`
+After `pullArtifacts()` resolves, the file `/tmp/tspr-out/test_results.json`
 inside the container (if it exists) MUST be present at
 `path.join(handle.runDir, 'test_results.json')` on the host.
 
@@ -256,7 +256,7 @@ MUST return `stdout` containing the value of `MY_VAR`.
 It MUST NOT permanently modify the container environment.
 
 ### B-2-25 pullArtifacts — silent success on absent output directory
-If `/tmp/localsprite-out/` does not exist inside the container, or the directory is
+If `/tmp/tspr-out/` does not exist inside the container, or the directory is
 empty, `pullArtifacts()` MUST resolve without throwing.
 No host-side files are created for absent source paths.
 Callers MUST NOT assume that a non-throwing return from `pullArtifacts()` implies any
@@ -264,7 +264,7 @@ file was written.
 
 ### B-2-26 concurrent sandboxes — max concurrent limit error code
 When `createSandbox()` is called and the number of active sandboxes already equals
-`LOCALSPRITE_SANDBOX_MAX_CONCURRENT` (default 3), the call MUST throw `SandboxError`
+`TSPR_SANDBOX_MAX_CONCURRENT` (default 3), the call MUST throw `SandboxError`
 with `code === 'ERR_MAX_CONCURRENT_EXCEEDED'`.
 The error MUST be thrown before any container is created.
 
@@ -280,7 +280,7 @@ If the host Node process receives SIGTERM while one or more sandboxes are in `'r
 state, all running containers MUST be disposed (force-killed and removed) before the
 process exits.
 Behavior is equivalent to SIGINT (B-2-16), including the Windows platform note.
-No `localsprite.managed = "true"` containers may be left running after the process
+No `tspr.managed = "true"` containers may be left running after the process
 terminates on POSIX platforms.
 
 ### B-2-29 dispose — 'stopping' state is transient and may be skipped
@@ -303,7 +303,7 @@ confirms OOM state. This is NOT a contract violation.
 
 ### B-2-31 image build failure — no container leak
 When `ERR_IMAGE_BUILD_FAILED` is thrown, no container with label
-`localsprite.managed = "true"` may exist as a result of that call.
+`tspr.managed = "true"` may exist as a result of that call.
 (Parallel clean-state guarantee to B-2-2, which covers `ERR_DOCKER_UNAVAILABLE`.)
 
 ---
@@ -313,11 +313,11 @@ When `ERR_IMAGE_BUILD_FAILED` is thrown, no container with label
 | `SandboxError.code` | Thrown by | Meaning |
 |---|---|---|
 | `ERR_DOCKER_UNAVAILABLE` | `createSandbox` | Docker daemon not reachable within 2 s |
-| `ERR_IMAGE_BUILD_FAILED` | `createSandbox` | `localsprite/sandbox-node:24` could not be built or pulled |
+| `ERR_IMAGE_BUILD_FAILED` | `createSandbox` | `tspr/sandbox-node:24` could not be built or pulled |
 | `ERR_CONTAINER_START_TIMEOUT` | `createSandbox`, `bootApp` | Container/app did not reach running/ready state in time |
 | `ERR_EXEC_TIMEOUT` | `exec` (via `timedOut: true` in result, NOT thrown) | Exec killed because `opts.timeout` exceeded |
 | `ERR_PORT_UNAVAILABLE` | `createSandbox` | No free ephemeral port could be allocated |
-| `ERR_MAX_CONCURRENT_EXCEEDED` | `createSandbox` | Active sandbox count already equals `LOCALSPRITE_SANDBOX_MAX_CONCURRENT` |
+| `ERR_MAX_CONCURRENT_EXCEEDED` | `createSandbox` | Active sandbox count already equals `TSPR_SANDBOX_MAX_CONCURRENT` |
 | `ERR_OUT_OF_MEMORY` | `exec` | Container was OOM-killed |
 | `ERR_ARTIFACT_PULL_FAILED` | `pullArtifacts` | tar stream from container could not be extracted (container must be running) |
 
@@ -330,7 +330,7 @@ When `ERR_IMAGE_BUILD_FAILED` is thrown, no container with label
 
 1. **Every handle** that reaches `status === 'running'` MUST eventually reach `status === 'disposed'`
    — via explicit `dispose()`, TTL timer, or SIGINT/SIGTERM handler.
-2. **No container** with label `localsprite.managed = "true"` created by this module may outlive
+2. **No container** with label `tspr.managed = "true"` created by this module may outlive
    the Node process that created it (barring OS-level kill of the Docker daemon itself).
 3. **`dispose()` is always safe to call** regardless of current status.
 4. **`pullArtifacts()` is called before container removal** — either by `dispose()` internally,
@@ -346,11 +346,11 @@ When `ERR_IMAGE_BUILD_FAILED` is thrown, no container with label
 
 | Variable | Default | Effect |
 |---|---|---|
-| `LOCALSPRITE_SANDBOX_TTL_MS` | `300000` | Default TTL for all sandboxes (overridden by `options.ttlMs`) |
-| `LOCALSPRITE_SANDBOX_MEM_MB` | `1024` | Default memory limit in MiB |
-| `LOCALSPRITE_SANDBOX_IMAGE` | `localsprite/sandbox-node:24` | Base image tag to use |
-| `LOCALSPRITE_SANDBOX_MAX_CONCURRENT` | `3` | Max sandboxes allowed simultaneously |
-| `LOCALSPRITE_RUNS_DIR` | `~/.localsprite/runs` (or `%LOCALAPPDATA%\localsprite\runs` on Windows) | Base directory for run artifacts |
+| `TSPR_SANDBOX_TTL_MS` | `300000` | Default TTL for all sandboxes (overridden by `options.ttlMs`) |
+| `TSPR_SANDBOX_MEM_MB` | `1024` | Default memory limit in MiB |
+| `TSPR_SANDBOX_IMAGE` | `tspr/sandbox-node:24` | Base image tag to use |
+| `TSPR_SANDBOX_MAX_CONCURRENT` | `3` | Max sandboxes allowed simultaneously |
+| `TSPR_RUNS_DIR` | `~/.tspr/runs` (or `%LOCALAPPDATA%\tspr\runs` on Windows) | Base directory for run artifacts |
 | `DOCKER_SOCKET_PATH` | `/var/run/docker.sock` (Linux/macOS) or `//./pipe/docker_engine` (Windows) | Override Docker socket path |
 
 ### `CreateSandboxOptions` fields that change behavior
@@ -385,8 +385,8 @@ Every container created by this module carries these Docker labels:
 
 | Label | Value |
 |---|---|
-| `localsprite.managed` | `"true"` |
-| `localsprite.run-id` | value of `handle.runId` |
+| `tspr.managed` | `"true"` |
+| `tspr.run-id` | value of `handle.runId` |
 
-These labels are observable via `docker ps --filter label=localsprite.managed=true`
+These labels are observable via `docker ps --filter label=tspr.managed=true`
 and are used by the SIGINT cleanup handler to find leaked containers.

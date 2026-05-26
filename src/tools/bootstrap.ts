@@ -1,5 +1,5 @@
 /**
- * Tool 1: localsprite_bootstrap_tests
+ * Tool 1: tspr_bootstrap_tests
  *
  * Session entry point. Validates project path, detects project type,
  * checks Docker, writes session record to SQLite.
@@ -118,7 +118,7 @@ async function bootstrapHandler(args: unknown, ctx: ServerContext): Promise<Tool
     const insert = ctx.db.prepare(
       `INSERT INTO runs (session_id, tool, params_hash, started_at) VALUES (?, ?, ?, ?)`,
     );
-    const result = insert.run(sessionId, 'localsprite_bootstrap_tests', paramsHash, startedAt);
+    const result = insert.run(sessionId, 'tspr_bootstrap_tests', paramsHash, startedAt);
     runId = result.lastInsertRowid;
   } catch (err) {
     ctx.logger.warn('Failed to insert run row', { err });
@@ -142,7 +142,7 @@ async function bootstrapHandler(args: unknown, ctx: ServerContext): Promise<Tool
     sessionId,
     projectType,
     detectedFramework: framework,
-    nextAction: `Project detected as ${projectType} (${framework}). Call localsprite_generate_code_summary next.`,
+    nextAction: `Project detected as ${projectType} (${framework}). Call tspr_generate_code_summary next.`,
     warnings,
   };
 
@@ -152,7 +152,7 @@ async function bootstrapHandler(args: unknown, ctx: ServerContext): Promise<Tool
 }
 
 export const bootstrapTool: ToolDefinition = {
-  name: 'localsprite_bootstrap_tests',
+  name: 'tspr_bootstrap_tests',
   description:
     'Session entry point. Validates the project path, detects project type, checks Docker, and writes a session record. Returns next-action instructions.',
   inputSchema: bootstrapInputSchema,

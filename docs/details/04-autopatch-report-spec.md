@@ -9,7 +9,7 @@
 
 ## 0. Purpose
 
-When `localsprite_generate_code_and_execute` runs tests and any of them fail, the tool does **not** apply patches. Instead it builds a structured `AutoPatchReport` JSON and returns it as the MCP tool response body. The calling coding agent (Claude Code / Cursor) reads that JSON, decides whether/how to fix the code, and may call `localsprite_rerun_tests` when done.
+When `tspr_generate_code_and_execute` runs tests and any of them fail, the tool does **not** apply patches. Instead it builds a structured `AutoPatchReport` JSON and returns it as the MCP tool response body. The calling coding agent (Claude Code / Cursor) reads that JSON, decides whether/how to fix the code, and may call `tspr_rerun_tests` when done.
 
 This spec covers:
 - The exact JSON shape (top-level + per-failure)
@@ -79,7 +79,7 @@ interface FailureRecord {
 
   // --- Frontend-only (undefined for backend) ---
   domSnapshot?: string;        // page.content() at point of failure, ≤30 KB
-  screenshotPath?: string;     // absolute path to PNG written to .localsprite/screenshots/
+  screenshotPath?: string;     // absolute path to PNG written to .tspr/screenshots/
   consoleErrors?: ConsoleEntry[];
   networkErrors?: NetworkError[];
   lastUrl?: string;            // page.url() at point of failure
@@ -228,14 +228,14 @@ function truncateDom(html: string, maxBytes = 30 * 1024): string {
 Playwright `page.screenshot()` is called in the `afterEach`-equivalent hook:
 
 ```typescript
-const dir = path.join(os.homedir(), ".localsprite", "screenshots");
+const dir = path.join(os.homedir(), ".tspr", "screenshots");
 await fs.mkdir(dir, { recursive: true });
 const filename = `${runId}-${testId}-${Date.now()}.png`;
 const screenshotPath = path.join(dir, filename);
 await page.screenshot({ path: screenshotPath, fullPage: true });
 ```
 
-Absolute path is stored in the report. The path persists until user clears `~/.localsprite/screenshots/`.
+Absolute path is stored in the report. The path persists until user clears `~/.tspr/screenshots/`.
 
 ### 4.5 `suggestedPatch` + `confidence`
 
@@ -382,7 +382,7 @@ If the report still exceeds 500 KB after all drops, it is returned as-is with a 
 
 ## 8. MCP Wire Encoding
 
-The MCP tool `localsprite_generate_code_and_execute` returns:
+The MCP tool `tspr_generate_code_and_execute` returns:
 
 ```typescript
 return {
@@ -401,17 +401,17 @@ The coding agent (cc / Cursor) receives this as the tool result and is expected 
 
 ## 9. TestSprite Backwards-Compat Shim
 
-When the environment variable `LOCALSPRITE_EMIT_TESTSPRITE_COMPAT=1` is set (or config option `emitTestSpriteCompat: true`), `src/report/testspriteCompat.ts` writes a separate file:
+When the environment variable `TSPR_EMIT_TESTSPRITE_COMPAT=1` is set (or config option `emitTestSpriteCompat: true`), `src/report/testspriteCompat.ts` writes a separate file:
 
 ```
-{projectPath}/.localsprite/test_results.json
+{projectPath}/.tspr/test_results.json
 ```
 
 This file uses TestSprite's published key names so that clients expecting the TestSprite format can consume it without change.
 
 **Schema mapping table**:
 
-| localsprite field | TestSprite equivalent | Notes |
+| tspr field | TestSprite equivalent | Notes |
 |---|---|---|
 | `runId` | `run_id` | same value |
 | `summary.total` | `total_tests` | — |
@@ -489,7 +489,7 @@ VALUES ...
       "errorMessage": "expect(received).toBe(expected) — Expected: \"Order placed\", Received: \"\"",
       "stack": "Error: expect(received).toBe(expected)\n    at checkout.spec.ts:42:34\n    at async Page.<anonymous> (tests/checkout.spec.ts:38:5)",
       "domSnapshot": "<!DOCTYPE html><html><head><title>Shop</title></head><body><div id=\"cart\"><button id=\"checkout\">Checkout</button></div></body></html>",
-      "screenshotPath": "/home/user/.localsprite/screenshots/a1b2c3d4-c7f2a891b3d4-1716733920000.png",
+      "screenshotPath": "/home/user/.tspr/screenshots/a1b2c3d4-c7f2a891b3d4-1716733920000.png",
       "consoleErrors": [
         {
           "level": "error",

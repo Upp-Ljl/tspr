@@ -13,7 +13,7 @@ beforeAll(async () => {
   try {
     const { execSync } = await import('child_process');
     execSync('docker info', { stdio: 'pipe', timeout: 5000 });
-    execSync('docker image inspect localsprite/sandbox-node:24', { stdio: 'pipe', timeout: 5000 });
+    execSync('docker image inspect tspr/sandbox-node:24', { stdio: 'pipe', timeout: 5000 });
     // Create a shared sandbox handle for exec tests
     sharedHandle = await createSandbox({
       projectPath: await makeTempProject(),

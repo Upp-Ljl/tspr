@@ -10,8 +10,8 @@ const AUTO_DETECT_PATHS = [
   'tests/fixtures/auth.mjs',
   'e2e/fixtures/login.ts',
   'e2e/fixtures/login.mjs',
-  '.localsprite/login.ts',
-  '.localsprite/login.mjs',
+  '.tspr/login.ts',
+  '.tspr/login.mjs',
 ];
 
 /**
@@ -71,7 +71,7 @@ export async function runLoginFixture(
       }
     } else {
       // Heuristic: no fixture found — check for credentials.json
-      const credsPath = path.join(projectPath, '.localsprite', 'credentials.json');
+      const credsPath = path.join(projectPath, '.tspr', 'credentials.json');
       if (!existsSync(credsPath)) {
         await context.close();
         throw new ExplorationError('LOGIN_FAILED', 'no credentials file');

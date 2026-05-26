@@ -52,7 +52,7 @@ function parseArgs(argv: string[]): Record<string, string> {
         i++;
       }
       if (!knownFlags.has(arg)) {
-        process.stderr.write(`[localsprite] warn: unknown flag ${arg}\n`);
+        process.stderr.write(`[tspr] warn: unknown flag ${arg}\n`);
       }
     }
   }
@@ -75,14 +75,14 @@ function loadConfigFile(configPath: string): ConfigFile {
     return JSON.parse(raw) as ConfigFile;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      process.stderr.write(`[localsprite] warn: config file not parseable JSON, using defaults\n`);
+      process.stderr.write(`[tspr] warn: config file not parseable JSON, using defaults\n`);
     }
     return {};
   }
 }
 
 function buildConfig(flags: Record<string, string>): ResolvedConfig & { provider?: string } {
-  const configPath = flags['--config'] ?? path.join(os.homedir(), '.localsprite', 'config.json');
+  const configPath = flags['--config'] ?? path.join(os.homedir(), '.tspr', 'config.json');
   const fileConfig = loadConfigFile(configPath);
 
   // Also load provider config (shared path, tolerates missing file)
@@ -118,8 +118,8 @@ function makeLogger(logLevel: string): Logger {
   function log(level: string, msg: string, ctx?: object): void {
     if (levels.indexOf(level) >= minLevel) {
       const line = ctx
-        ? `[localsprite] ${level}: ${msg} ${JSON.stringify(ctx)}`
-        : `[localsprite] ${level}: ${msg}`;
+        ? `[tspr] ${level}: ${msg} ${JSON.stringify(ctx)}`
+        : `[tspr] ${level}: ${msg}`;
       process.stderr.write(line + '\n');
     }
   }
@@ -134,7 +134,7 @@ function makeLogger(logLevel: string): Logger {
 
 // ─── SQLite initialization ────────────────────────────────────────────────────
 function initDb(logger: Logger): Db {
-  const dbDir = path.join(os.homedir(), '.localsprite');
+  const dbDir = path.join(os.homedir(), '.tspr');
   fs.mkdirSync(dbDir, { recursive: true });
   const dbPath = path.join(dbDir, 'db.sqlite');
 
@@ -195,7 +195,7 @@ function makeCcClient(config: ResolvedConfig & { provider?: string }, logger: Lo
   try {
     localSpriteConfig = loadConfig(config.configPath);
   } catch (err) {
-    logger.warn('Could not load localsprite provider config, falling back to claude subprocess', {
+    logger.warn('Could not load tspr provider config, falling back to claude subprocess', {
       err: String(err),
     });
   }
@@ -231,7 +231,7 @@ function makeDockerManager(logger: Logger): DockerManager {
         HostConfig: {
           Binds: opts.binds,
         },
-        Labels: { localsprite: 'true', ...(opts.labels ?? {}) },
+        Labels: { tspr: 'true', ...(opts.labels ?? {}) },
       });
       const wrapped: DockerContainer = {
         id: container.id,
@@ -277,7 +277,7 @@ export async function startMcpServer(argv: string[] = process.argv.slice(2)): Pr
   try {
     db = initDb(logger);
   } catch (err) {
-    process.stderr.write(`[localsprite] fatal: SQLite init failed: ${String(err)}\n`);
+    process.stderr.write(`[tspr] fatal: SQLite init failed: ${String(err)}\n`);
     process.exit(1);
   }
 
@@ -288,7 +288,7 @@ export async function startMcpServer(argv: string[] = process.argv.slice(2)): Pr
   serverContext = { config, db, ccClient, docker, browserPool, logger };
 
   const server = new Server(
-    { name: 'localsprite', version: PKG_VERSION },
+    { name: 'tspr', version: PKG_VERSION },
     { capabilities: { tools: {} } },
   );
 
@@ -351,7 +351,7 @@ export async function startMcpServer(argv: string[] = process.argv.slice(2)): Pr
   await server.connect(transport);
 
   process.stderr.write(
-    `[localsprite] MCP server started (v${PKG_VERSION}, model=${config.model}, pid=${process.pid})\n`,
+    `[tspr] MCP server started (v${PKG_VERSION}, model=${config.model}, pid=${process.pid})\n`,
   );
 
   // Graceful shutdown handlers
@@ -384,7 +384,7 @@ export async function startMcpServer(argv: string[] = process.argv.slice(2)): Pr
   process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
 
   process.on('uncaughtException', (err) => {
-    process.stderr.write(`[localsprite] uncaughtException: ${String(err)}\n`);
+    process.stderr.write(`[tspr] uncaughtException: ${String(err)}\n`);
     void docker.teardownAll().finally(() => process.exit(1));
   });
 }
