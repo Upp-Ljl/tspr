@@ -11,6 +11,7 @@ import * as os from 'node:os';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolResult, ServerContext } from '../types/mcp.js';
 import { createSandbox, SandboxError } from '../sandbox/index.js';
+import { renderHtmlReport } from '../report/html-renderer.js';
 
 export const generateAndExecuteInputSchema = z.object({
   projectName: z.string(),
@@ -368,19 +369,31 @@ Return ONLY the TypeScript code, no markdown fences.`;
     );
   }
 
-  // Write simple HTML report
-  const reportHtml = `<!DOCTYPE html>
-<html>
-<head><title>tspr Test Report — ${projectName}</title></head>
-<body>
-<h1>Test Report: ${projectName}</h1>
-<p>Status: <strong>${status}</strong></p>
-<p>Total: ${totalTests} | Passed: ${passed} | Failed: ${failed} | Skipped: ${skipped}</p>
-${warnings.length > 0 ? `<h2>Warnings</h2><ul>${warnings.map((w) => `<li>${w}</li>`).join('')}</ul>` : ''}
-${failures.length > 0 ? `<h2>Failures</h2><ul>${failures.map((f) => `<li><strong>${f.title}</strong><pre>${f.stack}</pre></li>`).join('')}</ul>` : ''}
-<pre>${JSON.stringify(resultData, null, 2)}</pre>
-</body>
-</html>`;
+  // Write HTML report via pretty renderer
+  const htmlRunId = crypto.randomUUID();
+  const reportHtml = renderHtmlReport({
+    runId: htmlRunId,
+    projectName,
+    startedAt: new Date(),
+    durationMs: 0,
+    provider: 'unknown',
+    modelId: ctx.config.model ?? 'unknown',
+    costUsd: 0,
+    totalTests,
+    passed,
+    failed,
+    skipped,
+    status,
+    warnings,
+    failures: failures.map((f) => ({
+      testId: f.testId,
+      title: f.title,
+      stack: f.stack,
+      suggestedFixRegion: f.suggestedFixRegion,
+      suggestedPatch: f.suggestedPatch,
+      domSnapshot: f.domSnapshot,
+    })),
+  });
 
   try {
     fs.writeFileSync(reportPath, reportHtml, 'utf-8');
