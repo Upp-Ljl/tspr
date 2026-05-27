@@ -730,6 +730,9 @@ export async function createSandbox(options: CreateSandboxOptions): Promise<Sand
         SecurityOpt: ['no-new-privileges'],
         PortBindings: portBindings,
         NetworkMode: networkMode,
+        // Allow tests to reach the host app via host.docker.internal.
+        // Docker Desktop already resolves this; Linux daemons need the explicit mapping.
+        ExtraHosts: ['host.docker.internal:host-gateway'],
       },
     });
   } catch (err) {

@@ -15,6 +15,18 @@ RUN npm install -g vitest@latest @playwright/test@latest
 # Install Playwright browsers
 RUN npx playwright install chromium --with-deps || true
 
+# Pre-install an isolated test runtime so user-project node_modules pnpm symlinks
+# don't break vitest discovery. Tool 6 copies generated tests here at runtime and
+# runs vitest via the absolute entry point — no /work pollution.
+RUN mkdir -p /tspr-runtime/tests \
+ && cd /tspr-runtime \
+ && npm init -y \
+ && npm install --no-audit --no-fund --silent \
+      vitest@latest \
+      supertest@latest \
+      @vitest/coverage-v8@latest \
+      node-fetch@3
+
 RUN mkdir -p /work /tmp/tspr-out
 WORKDIR /work
 
