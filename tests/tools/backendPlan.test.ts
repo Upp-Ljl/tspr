@@ -1,6 +1,7 @@
 /**
  * Tests for Tool 5: tspr_generate_backend_test_plan
  * Covers: B-5-1 through B-5-6, B-A-4
+ * New: BEPLAN-007/008/009 — Next.js App Router route scanning
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'node:fs';
@@ -178,5 +179,115 @@ export default router;
       const data = getMcpErrorData(err);
       expect(data?.code).toBe('ERR_NOT_NODE_PROJECT');
     }
+  });
+
+  // ─── BEPLAN-007: Next.js App Router (app/api/**) ──────────────────────────
+  it('BEPLAN-007: Next.js App Router project with 3 routes detects all with correct methods', async () => {
+    // Build a minimal Next.js project with app/api routes
+    const p = mkProject({
+      packageJson: { name: 'next-app', version: '1.0.0', dependencies: { next: '^15.0.0' } },
+      files: {
+        // Route 1: GET /api/users
+        'app/api/users/route.ts': `
+export async function GET(req: Request) {
+  return Response.json([]);
+}
+`,
+        // Route 2: GET + POST /api/posts
+        'app/api/posts/route.ts': `
+export async function GET() {
+  return Response.json([]);
+}
+export async function POST(req: Request) {
+  return Response.json({});
+}
+`,
+        // Route 3: DELETE /api/posts/[id]  (dynamic param)
+        'app/api/posts/[id]/route.ts': `
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  return new Response(null, { status: 204 });
+}
+`,
+      },
+    });
+
+    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_BACKEND_PLAN) });
+    const result = await backendPlanTool.handler({ projectPath: p.projectPath }, ctx);
+    const parsed = JSON.parse(result.content[0].text) as {
+      status: string;
+      routesDiscovered: number;
+    };
+
+    expect(parsed.status).toBe('ok');
+    // Expect: GET /api/users, GET /api/posts, POST /api/posts, DELETE /api/posts/:id  = 4 routes
+    expect(parsed.routesDiscovered).toBe(4);
+
+    // Verify the written file contains the expected endpoint strings
+    const planPath = path.join(p.projectPath, '.tspr', 'backend_test_plan.json');
+    const plan = JSON.parse(fs.readFileSync(planPath, 'utf-8')) as { routesDiscovered: number };
+    expect(plan.routesDiscovered).toBe(4);
+  });
+
+  // ─── BEPLAN-008: Next.js with src/ layout ────────────────────────────────
+  it('BEPLAN-008: Next.js with src/app/api layout detects routes', async () => {
+    const p = mkProject({
+      packageJson: { name: 'next-src-app', version: '1.0.0', dependencies: { next: '^15.0.0' } },
+      files: {
+        // src/app/api structure
+        'src/app/api/health/route.ts': `
+export async function GET() {
+  return Response.json({ ok: true });
+}
+`,
+        'src/app/api/auth/login/route.ts': `
+export async function POST(req: Request) {
+  return Response.json({});
+}
+`,
+      },
+    });
+
+    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_BACKEND_PLAN) });
+    const result = await backendPlanTool.handler({ projectPath: p.projectPath }, ctx);
+    const parsed = JSON.parse(result.content[0].text) as {
+      status: string;
+      routesDiscovered: number;
+    };
+
+    expect(parsed.status).toBe('ok');
+    // Expect: GET /api/health, POST /api/auth/login = 2 routes
+    expect(parsed.routesDiscovered).toBe(2);
+  });
+
+  // ─── BEPLAN-009: Pages Router project unchanged ───────────────────────────
+  it('BEPLAN-009: Next.js Pages Router (pages/api) project still detected correctly', async () => {
+    // Pages Router: each file under pages/api is a route (gets GET + POST by default)
+    const p = mkProject({
+      packageJson: { name: 'next-pages', version: '1.0.0', dependencies: { next: '^14.0.0' } },
+      files: {
+        'pages/api/hello.ts': `
+export default function handler(req, res) {
+  res.json({ message: 'Hello' });
+}
+`,
+        'pages/api/users/index.ts': `
+export default function handler(req, res) {
+  if (req.method === 'GET') res.json([]);
+  else res.status(405).end();
+}
+`,
+      },
+    });
+
+    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_BACKEND_PLAN) });
+    const result = await backendPlanTool.handler({ projectPath: p.projectPath }, ctx);
+    const parsed = JSON.parse(result.content[0].text) as {
+      status: string;
+      routesDiscovered: number;
+    };
+
+    expect(parsed.status).toBe('ok');
+    // Pages Router emits GET + POST for each file: 2 files × 2 = 4
+    expect(parsed.routesDiscovered).toBeGreaterThanOrEqual(4);
   });
 });

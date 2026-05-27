@@ -2,6 +2,10 @@
  * Tool 5: tspr_generate_backend_test_plan
  *
  * Scans project for Express/Fastify/Next API routes and produces a backend test plan.
+ * Supports:
+ *   - Express/Fastify router.get/post/put/delete/patch patterns
+ *   - Next.js Pages Router (pages/api/**)
+ *   - Next.js App Router: app/api/ ** /route.ts and src/app/api/ ** /route.ts
  */
 import { z } from 'zod';
 import * as fs from 'node:fs';
@@ -16,13 +20,112 @@ export const backendPlanInputSchema = z.object({
 
 type BackendPlanInput = z.infer<typeof backendPlanInputSchema>;
 
+/** HTTP methods exported from Next.js App Router route files */
+const APP_ROUTER_METHOD_RE =
+  /^export\s+(?:async\s+)?function\s+(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b/m;
+
+/**
+ * Derive the API endpoint path from an App Router route file path.
+ *
+ * Input examples (relative to the api root):
+ *   "auth/callback/route.ts"          -> "/api/auth/callback"
+ *   "memes/[id]/bet/route.ts"         -> "/api/memes/:id/bet"
+ *   "settle/[week]/route.ts"          -> "/api/settle/:week"
+ *
+ * @param relFromApiRoot  Path relative to the `app/api` (or `src/app/api`) directory,
+ *                        using the OS separator (may be backslash on Windows).
+ */
+function appRouterFileToEndpoint(relFromApiRoot: string): string {
+  // Split using the OS path separator (handles both '/' on Unix and '\' on Windows)
+  // Also handle the case where forward slashes are used on Windows
+  const segments = relFromApiRoot.split(path.sep);
+  // Remove the trailing "route.{ext}" segment
+  if (segments.length > 0 && /^route\.[tj]sx?$/.test(segments[segments.length - 1])) {
+    segments.pop();
+  }
+  // Convert [param] -> :param
+  const parameterised = segments.map((s) => s.replace(/^\[([^\]]+)\]$/, ':$1')).join('/');
+  return `/api/${parameterised}`;
+}
+
+/**
+ * Walk all Next.js App Router route files under a given `app/api` root directory.
+ * Returns entries like  "GET /api/auth/callback", "POST /api/memes/:id/bet", …
+ */
+function scanAppRouterDir(apiDir: string): string[] {
+  const results: string[] = [];
+
+  function walk(dir: string): void {
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const fp = path.join(dir, e);
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(fp);
+      } catch {
+        continue;
+      }
+      if (stat.isDirectory()) {
+        walk(fp);
+      } else if (/^route\.[tj]sx?$/.test(e)) {
+        // It's a route file — parse its exported HTTP methods
+        let content: string;
+        try {
+          content = fs.readFileSync(fp, 'utf-8');
+        } catch {
+          continue;
+        }
+        const relFromApiRoot = path.relative(apiDir, fp);
+        const endpoint = appRouterFileToEndpoint(relFromApiRoot);
+
+        // Extract ALL method exports from the file
+        const methodRe = /^export\s+(?:async\s+)?function\s+(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b/gm;
+        let match: RegExpExecArray | null;
+        let foundAny = false;
+        while ((match = methodRe.exec(content)) !== null) {
+          results.push(`${match[1]} ${endpoint}`);
+          foundAny = true;
+        }
+        // Fallback: if no method exports found, still register the endpoint as GET
+        if (!foundAny) {
+          results.push(`GET ${endpoint}`);
+        }
+      }
+    }
+  }
+
+  walk(apiDir);
+  return results;
+}
+
+/** Return true if the project has Next.js as a dependency (direct or peer). */
+function isNextJsProject(projectPath: string): boolean {
+  try {
+    const pkgRaw = fs.readFileSync(path.join(projectPath, 'package.json'), 'utf-8');
+    const pkg = JSON.parse(pkgRaw) as Record<string, Record<string, string>>;
+    const allDeps = {
+      ...pkg.dependencies,
+      ...pkg.devDependencies,
+      ...pkg.peerDependencies,
+    };
+    return 'next' in allDeps;
+  } catch {
+    return false;
+  }
+}
+
 function detectRoutes(projectPath: string): string[] {
   const routes: string[] = [];
   const routePattern =
     /(?:router|app|fastify)\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
   const nextApiDir = path.join(projectPath, 'pages', 'api');
 
-  // Walk project files
+  // Walk project files for Express/Fastify patterns
   function walkDir(dir: string, depth: number = 0): void {
     if (depth > 5) return;
     let entries: string[];
@@ -58,7 +161,7 @@ function detectRoutes(projectPath: string): string[] {
 
   walkDir(projectPath);
 
-  // Next.js pages/api
+  // Next.js Pages Router (pages/api/**)
   if (fs.existsSync(nextApiDir)) {
     function walkNextApi(dir: string, prefix: string): void {
       let entries: string[];
@@ -84,6 +187,19 @@ function detectRoutes(projectPath: string): string[] {
       }
     }
     walkNextApi(nextApiDir, '/api');
+  }
+
+  // Next.js App Router: app/api/**/route.{ts,tsx,js,jsx}
+  // Also handles src/app/api/** for projects using src/ layout
+  if (isNextJsProject(projectPath)) {
+    for (const appApiRoot of [
+      path.join(projectPath, 'app', 'api'),
+      path.join(projectPath, 'src', 'app', 'api'),
+    ]) {
+      if (fs.existsSync(appApiRoot)) {
+        routes.push(...scanAppRouterDir(appApiRoot));
+      }
+    }
   }
 
   return [...new Set(routes)];
@@ -245,7 +361,7 @@ Return ONLY valid JSON.`;
 export const backendPlanTool: ToolDefinition = {
   name: 'tspr_generate_backend_test_plan',
   description:
-    'Scans the project for Express/Fastify/Next API routes and generates a structured backend test plan with happy-path, error, auth, integration, and db scenarios.',
+    'Scans the project for Express/Fastify/Next API routes (including Next.js App Router app/api/**/route.ts) and generates a structured backend test plan with happy-path, error, auth, integration, and db scenarios.',
   inputSchema: backendPlanInputSchema,
   handler: backendPlanHandler,
 };
