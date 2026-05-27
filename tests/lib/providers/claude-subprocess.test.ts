@@ -15,7 +15,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ClaudeSubprocessProvider } from '../../../src/lib/providers/claude-subprocess.js';
-import { CcError } from '../../../src/lib/errors.js';
+import { LlmError } from '../../../src/lib/errors.js';
 import { ErrCode } from '../../../src/lib/errors.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -94,18 +94,18 @@ describe('ClaudeSubprocessProvider — happy path', () => {
 // ─────────────────────────────────────────────
 
 describe('ClaudeSubprocessProvider — non-zero exit', () => {
-  it('rejects with CcError on non-zero exit', async () => {
+  it('rejects with LlmError on non-zero exit', async () => {
     const p = fakeProvider();
     const env: FakeEnv = { FAKE_CLAUDE_EXIT_CODE: '1', FAKE_CLAUDE_STDERR: 'auth failed' };
-    await expect(p.chat({ model: 'haiku', prompt: 'x', _env: env })).rejects.toBeInstanceOf(CcError);
+    await expect(p.chat({ model: 'haiku', prompt: 'x', _env: env })).rejects.toBeInstanceOf(LlmError);
   });
 
-  it('CcError has code ERR_CC_FAILED on non-zero exit', async () => {
+  it('LlmError has code ERR_CC_FAILED on non-zero exit', async () => {
     const p = fakeProvider();
     const env: FakeEnv = { FAKE_CLAUDE_EXIT_CODE: '2', FAKE_CLAUDE_STDOUT: '' };
     let caught: unknown;
     try { await p.chat({ model: 'haiku', prompt: 'x', _env: env }); } catch (e) { caught = e; }
-    expect((caught as CcError).code).toBe(ErrCode.ERR_CC_FAILED);
+    expect((caught as LlmError).code).toBe(ErrCode.ERR_CC_FAILED);
   });
 });
 
@@ -120,8 +120,8 @@ describe('ClaudeSubprocessProvider — timeout', () => {
     let caught: unknown;
     try { await p.chat({ model: 'haiku', prompt: 'x', timeoutMs: 100, _env: env }); }
     catch (e) { caught = e; }
-    expect(caught).toBeInstanceOf(CcError);
-    expect((caught as CcError).code).toBe(ErrCode.ERR_CC_TIMEOUT);
+    expect(caught).toBeInstanceOf(LlmError);
+    expect((caught as LlmError).code).toBe(ErrCode.ERR_CC_TIMEOUT);
   }, 10_000);
 });
 
@@ -130,12 +130,12 @@ describe('ClaudeSubprocessProvider — timeout', () => {
 // ─────────────────────────────────────────────
 
 describe('ClaudeSubprocessProvider — invalid binary', () => {
-  it('rejects with CcError when binary does not exist', async () => {
+  it('rejects with LlmError when binary does not exist', async () => {
     const p = new ClaudeSubprocessProvider({ binary: 'definitely-not-a-binary-xyz' });
     let caught: unknown;
     try { await p.chat({ model: 'haiku', prompt: 'x' }); } catch (e) { caught = e; }
-    expect(caught).toBeInstanceOf(CcError);
-    expect((caught as CcError).code).toBe(ErrCode.ERR_CC_FAILED);
+    expect(caught).toBeInstanceOf(LlmError);
+    expect((caught as LlmError).code).toBe(ErrCode.ERR_CC_FAILED);
   });
 });
 

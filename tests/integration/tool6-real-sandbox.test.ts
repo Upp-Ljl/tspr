@@ -120,7 +120,7 @@ describe('fixture', () => {
 `;
 
     const ctx = makeContext({
-      ccClient: makeMockCcClient(trivialSpec),
+      llmClient: makeMockCcClient(trivialSpec),
       // No docker injected — production path uses createSandbox directly
     });
     // Remove the default docker from ctx so the production branch is exercised

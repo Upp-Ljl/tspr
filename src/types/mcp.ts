@@ -2,7 +2,7 @@
  * Core MCP module types.
  */
 import type { z } from 'zod';
-import type { CcClient, Db, Logger, DockerManager, BrowserPool } from '../mcp/_deps.js';
+import type { LlmClient, Db, Logger, DockerManager, BrowserPool } from '../mcp/_deps.js';
 
 export interface ToolResult {
   [key: string]: unknown;
@@ -24,7 +24,7 @@ export interface ResolvedConfig {
 export interface ServerContext {
   config: ResolvedConfig;
   db: Db;
-  ccClient: CcClient;
+  llmClient: LlmClient;
   /** Optional: present in tests for mock-based ping checks; absent in production (sandbox handles Docker directly). */
   docker?: DockerManager;
   browserPool: BrowserPool;

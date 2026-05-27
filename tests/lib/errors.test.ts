@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   TsprError,
   SandboxError,
-  CcError,
+  LlmError,
   ReportError,
   ErrCode,
   toMcpError,
@@ -60,16 +60,16 @@ describe('SandboxError', () => {
   });
 });
 
-describe('CcError', () => {
+describe('LlmError', () => {
   it('is an instance of TsprError', () => {
-    const err = new CcError('ERR_CC_FAILED', 'claude failed');
+    const err = new LlmError('ERR_CC_FAILED', 'claude failed');
     expect(err).toBeInstanceOf(TsprError);
-    expect(err).toBeInstanceOf(CcError);
+    expect(err).toBeInstanceOf(LlmError);
   });
 
-  it('name is CcError', () => {
-    const err = new CcError('ERR_CC_FAILED', 'claude failed');
-    expect(err.name).toBe('CcError');
+  it('name is LlmError', () => {
+    const err = new LlmError('ERR_CC_FAILED', 'claude failed');
+    expect(err.name).toBe('LlmError');
   });
 });
 
@@ -116,7 +116,7 @@ describe('toMcpError', () => {
   });
 
   it('ERR_CC_FAILED maps to -32603', () => {
-    const err = new CcError(ErrCode.ERR_CC_FAILED, 'claude died');
+    const err = new LlmError(ErrCode.ERR_CC_FAILED, 'claude died');
     const mcp = toMcpError(err);
     expect(mcp.code).toBe(JSONRPC_INTERNAL_ERROR);
   });

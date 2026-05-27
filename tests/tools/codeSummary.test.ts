@@ -66,7 +66,7 @@ describe('tspr_generate_code_summary', () => {
   // ─── B-2-3/B-A-1: success returns ok + outputPath ─────────────────────────
   it('SUMMARY-003/004 (mock): success returns ok + outputPath to code_summary.json', async () => {
     const p = mkProject();
-    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_SUMMARY_RESPONSE) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(VALID_SUMMARY_RESPONSE) });
     const result = await codeSummaryTool.handler({ projectRootPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as {
       status: string;
@@ -85,7 +85,7 @@ describe('tspr_generate_code_summary', () => {
   // ─── B-2-5: framework is non-empty string ─────────────────────────────────
   it('SUMMARY-005 (mock): framework is non-empty string', async () => {
     const p = mkProject();
-    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_SUMMARY_RESPONSE) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(VALID_SUMMARY_RESPONSE) });
     const result = await codeSummaryTool.handler({ projectRootPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as { framework: string };
     expect(typeof parsed.framework).toBe('string');
@@ -95,7 +95,7 @@ describe('tspr_generate_code_summary', () => {
   // ─── B-2-6: entryPoints is an array ───────────────────────────────────────
   it('SUMMARY-006 (mock): entryPoints is an array', async () => {
     const p = mkProject();
-    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_SUMMARY_RESPONSE) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(VALID_SUMMARY_RESPONSE) });
     const result = await codeSummaryTool.handler({ projectRootPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as { entryPoints: unknown };
     expect(Array.isArray(parsed.entryPoints)).toBe(true);
@@ -104,7 +104,7 @@ describe('tspr_generate_code_summary', () => {
   // ─── CC fail fallback (retry) ──────────────────────────────────────────────
   it('cc failure returns ERR_CC_FAILED', async () => {
     const p = mkProject();
-    const ctx = makeContext({ ccClient: makeFailingCcClient() });
+    const ctx = makeContext({ llmClient: makeFailingCcClient() });
     try {
       await codeSummaryTool.handler({ projectRootPath: p.projectPath }, ctx);
       expect.fail('Should have thrown');
@@ -117,7 +117,7 @@ describe('tspr_generate_code_summary', () => {
   // ─── CC invalid JSON (after retry) ────────────────────────────────────────
   it('cc invalid JSON output returns ERR_CC_OUTPUT_INVALID', async () => {
     const p = mkProject();
-    const ctx = makeContext({ ccClient: makeMockCcClient('not valid json at all!!!') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('not valid json at all!!!') });
     try {
       await codeSummaryTool.handler({ projectRootPath: p.projectPath }, ctx);
       expect.fail('Should have thrown');
@@ -131,7 +131,7 @@ describe('tspr_generate_code_summary', () => {
   it('cc response with markdown fences is parsed correctly', async () => {
     const fencedResponse = `\`\`\`json\n${VALID_SUMMARY_RESPONSE}\n\`\`\``;
     const p = mkProject();
-    const ctx = makeContext({ ccClient: makeMockCcClient(fencedResponse) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(fencedResponse) });
     const result = await codeSummaryTool.handler({ projectRootPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as { status: string; framework: string };
     expect(parsed.status).toBe('ok');

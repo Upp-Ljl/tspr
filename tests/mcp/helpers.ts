@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import type { Db, Stmt, CcClient, Logger, DockerManager, BrowserPool, DockerContainer } from '../../src/mcp/_deps.js';
+import type { Db, Stmt, LlmClient, Logger, DockerManager, BrowserPool, DockerContainer } from '../../src/mcp/_deps.js';
 import type { ServerContext, ResolvedConfig } from '../../src/types/mcp.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
@@ -182,9 +182,9 @@ export function makeMockDb(): MockDb {
   };
 }
 
-// ─── Mock CcClient ────────────────────────────────────────────────────────────
+// ─── Mock LlmClient ────────────────────────────────────────────────────────────
 
-export function makeMockCcClient(response: string | (() => string)): CcClient {
+export function makeMockCcClient(response: string | (() => string)): LlmClient {
   return {
     async run(_opts) {
       const stdout = typeof response === 'function' ? response() : response;
@@ -193,7 +193,7 @@ export function makeMockCcClient(response: string | (() => string)): CcClient {
   };
 }
 
-export function makeFailingCcClient(): CcClient {
+export function makeFailingCcClient(): LlmClient {
   return {
     async run(_opts) {
       throw new Error('cc subprocess failed with exit code 1');
@@ -276,7 +276,7 @@ export function makeContext(overrides?: Partial<ServerContext>): ServerContext {
   return {
     config: makeDefaultConfig(),
     db: makeMockDb(),
-    ccClient: makeMockCcClient('{}'),
+    llmClient: makeMockCcClient('{}'),
     docker: makeMockDockerManager(),
     browserPool: makeMockBrowserPool(),
     logger: makeMockLogger(),

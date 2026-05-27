@@ -125,8 +125,8 @@ describe('tspr_generate_frontend_test_plan', () => {
     // Step 2: call frontendPlan; it should find the session and NOT throw ERR_NOT_BOOTSTRAPPED.
     // It will throw ERR_PLAYWRIGHT_MISSING (Playwright not installed in test env) — that is
     // past the session-check gate, proving sessions lookup succeeded.
-    const ccClient = makeMockCcClient(JSON.stringify({ pages: ['/'], interactions: ['click button'] }));
-    const frontendCtx = makeContext({ db, ccClient });
+    const llmClient = makeMockCcClient(JSON.stringify({ pages: ['/'], interactions: ['click button'] }));
+    const frontendCtx = makeContext({ db, llmClient });
 
     let thrownCode: string | null = null;
     try {

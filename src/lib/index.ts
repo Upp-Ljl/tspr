@@ -3,16 +3,16 @@
  * Barrel export for all shared library utilities.
  */
 
-// cc.ts — CcClient factory (delegates to provider layer)
-export type { CcRunOptions, CcRunResult, CcClient, CcClientConfig, ClaudeModel } from './cc.js';
-export { createCcClient } from './cc.js';
+// cc.ts — LlmClient factory (delegates to provider layer)
+export type { LlmRunOptions, LlmRunResult, LlmClient, LlmClientConfig, ClaudeModel } from './cc.js';
+export { createLlmClient } from './cc.js';
 
 // config.ts — ~/.tspr/config.json loader + Zod schema
 export type { TsprConfig } from './config.js';
 export { loadConfig, TsprConfigSchema } from './config.js';
 
-// providers — CcProvider interface + all providers + factory
-export type { CcProvider, ModelAliasMap } from './providers/index.js';
+// providers — LlmProvider interface + all providers + factory
+export type { LlmProvider, ModelAliasMap } from './providers/index.js';
 export {
   ClaudeSubprocessProvider,
   OpenAICompatProvider,
@@ -36,7 +36,7 @@ export { createLogger } from './log.js';
 export {
   TsprError,
   SandboxError,
-  CcError,
+  LlmError,
   ReportError,
   ErrCode,
   toMcpError,

@@ -1,10 +1,10 @@
 /**
  * src/lib/cc.ts
- * Thin CcClient factory — delegates to the configured provider.
+ * Thin LlmClient factory — delegates to the configured provider.
  *
  * Public interface is preserved exactly:
- *   createCcClient(config?) → CcClient
- *   CcClient.run(opts) → CcRunResult
+ *   createLlmClient(config?) → LlmClient
+ *   LlmClient.run(opts) → LlmRunResult
  *
  * Legacy shape (claudeBin / claudeArgs / defaultTimeoutMs) still works
  * and routes to the claude-subprocess provider for backwards compat.
@@ -12,7 +12,7 @@
 
 export type ClaudeModel = 'haiku' | 'sonnet' | 'opus';
 
-export interface CcRunOptions {
+export interface LlmRunOptions {
   model: ClaudeModel;
   prompt: string;
   /** Milliseconds before the subprocess is killed / HTTP request times out. Default: 60_000. */
@@ -27,7 +27,7 @@ export interface CcRunOptions {
   _env?: Record<string, string>;
 }
 
-export interface CcRunResult {
+export interface LlmRunResult {
   stdout: string;
   exitCode: number;
   durationMs: number;
@@ -36,15 +36,15 @@ export interface CcRunResult {
   modelUsed: ClaudeModel;
 }
 
-export interface CcClient {
-  run(opts: CcRunOptions): Promise<CcRunResult>;
+export interface LlmClient {
+  run(opts: LlmRunOptions): Promise<LlmRunResult>;
 }
 
 // ─────────────────────────────────────────────
 // Config (extends legacy shape with provider selector)
 // ─────────────────────────────────────────────
 
-export interface CcClientConfig {
+export interface LlmClientConfig {
   /**
    * Which provider to use.
    * Default: 'claude' (subprocess — backwards compat).
@@ -78,27 +78,27 @@ export interface CcClientConfig {
 import { ClaudeSubprocessProvider } from './providers/claude-subprocess.js';
 import { OpenAICompatProvider }     from './providers/openai-compat.js';
 import { MinimaxProvider }          from './providers/minimax.js';
-import type { CcProvider }          from './providers/types.js';
+import type { LlmProvider }          from './providers/types.js';
 
-class CcClientImpl implements CcClient {
-  constructor(private readonly provider: CcProvider) {}
+class LlmClientImpl implements LlmClient {
+  constructor(private readonly provider: LlmProvider) {}
 
-  run(opts: CcRunOptions): Promise<CcRunResult> {
+  run(opts: LlmRunOptions): Promise<LlmRunResult> {
     return this.provider.chat(opts);
   }
 }
 
 /**
- * Create a new CcClient instance.
+ * Create a new LlmClient instance.
  *
  * With no arguments (or provider='claude') → claude CLI subprocess (legacy behavior).
  *
  * @param config Optional configuration.
  */
-export function createCcClient(config?: CcClientConfig): CcClient {
+export function createLlmClient(config?: LlmClientConfig): LlmClient {
   const provider = config?.provider ?? 'claude';
 
-  let p: CcProvider;
+  let p: LlmProvider;
   switch (provider) {
     case 'claude':
       p = new ClaudeSubprocessProvider({
@@ -133,5 +133,5 @@ export function createCcClient(config?: CcClientConfig): CcClient {
     }
   }
 
-  return new CcClientImpl(p);
+  return new LlmClientImpl(p);
 }

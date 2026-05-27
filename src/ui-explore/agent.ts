@@ -2,7 +2,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from 'playwright';
 import type { AgentDiscovery, AgentStatus, FrontierTask, NetworkError, SuggestedInteraction } from './types.js';
-import type { CcClient, Logger } from './_deps.js';
+import type { LlmClient, Logger } from './_deps.js';
 import { FrontierQueue } from './frontier.js';
 import { canonicalizeUrl, structuralHash } from './dedup.js';
 import { captureSnapshot } from './snapshot.js';
@@ -41,7 +41,7 @@ export class AgentLoop {
   constructor(
     private readonly browser: Browser,
     private readonly state: ExplorationState,
-    private readonly ccClient: CcClient,
+    private readonly llmClient: LlmClient,
     private readonly logger: Logger,
     agentIndex: number, // 1-indexed
   ) {
@@ -301,7 +301,7 @@ ${domSnapshot.slice(0, 8000)}`;
     try {
       this.state.explorationCcCallCount++;
       const result = await Promise.race([
-        this.ccClient.run({ model: 'haiku', prompt, timeoutMs: CC_CALL_TIMEOUT_MS }),
+        this.llmClient.run({ model: 'haiku', prompt, timeoutMs: CC_CALL_TIMEOUT_MS }),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('cc timeout')), CC_CALL_TIMEOUT_MS),
         ),

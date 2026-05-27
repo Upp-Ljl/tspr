@@ -16,8 +16,8 @@
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createCcClient } from '../../src/lib/cc.js';
-import { CcError } from '../../src/lib/errors.js';
+import { createLlmClient } from '../../src/lib/cc.js';
+import { LlmError } from '../../src/lib/errors.js';
 import { ErrCode } from '../../src/lib/errors.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,11 +31,11 @@ type FakeEnv = {
 };
 
 /**
- * Create a CcClient that invokes: node <fake-claude.mjs> [claude-args]
+ * Create a LlmClient that invokes: node <fake-claude.mjs> [claude-args]
  * instead of the real `claude` binary.
  */
 function fakeClient(opts?: { defaultTimeoutMs?: number }) {
-  return createCcClient({
+  return createLlmClient({
     claudeBin: process.execPath,         // path to node
     claudeArgs: [FAKE_CLAUDE_SCRIPT],    // fake script is the first arg
     defaultTimeoutMs: opts?.defaultTimeoutMs ?? 10_000,
@@ -46,9 +46,9 @@ function fakeClient(opts?: { defaultTimeoutMs?: number }) {
 // Factory
 // ─────────────────────────────────────────────
 
-describe('createCcClient', () => {
-  it('returns a CcClient with a run() method', () => {
-    const client = createCcClient({ claudeBin: 'claude' });
+describe('createLlmClient', () => {
+  it('returns a LlmClient with a run() method', () => {
+    const client = createLlmClient({ claudeBin: 'claude' });
     expect(typeof client.run).toBe('function');
   });
 });
@@ -57,7 +57,7 @@ describe('createCcClient', () => {
 // Happy path
 // ─────────────────────────────────────────────
 
-describe('CcClient.run — happy path', () => {
+describe('LlmClient.run — happy path', () => {
   it('resolves with stdout content', async () => {
     const client = fakeClient();
     const env: FakeEnv = { FAKE_CLAUDE_EXIT_CODE: '0', FAKE_CLAUDE_STDOUT: 'hello from claude' };
@@ -120,8 +120,8 @@ describe('CcClient.run — happy path', () => {
 // Non-zero exit
 // ─────────────────────────────────────────────
 
-describe('CcClient.run — non-zero exit code', () => {
-  it('rejects with CcError when exit code is non-zero', async () => {
+describe('LlmClient.run — non-zero exit code', () => {
+  it('rejects with LlmError when exit code is non-zero', async () => {
     const client = fakeClient();
     const env: FakeEnv = {
       FAKE_CLAUDE_EXIT_CODE: '1',
@@ -130,10 +130,10 @@ describe('CcClient.run — non-zero exit code', () => {
     };
     await expect(
       client.run({ model: 'haiku', prompt: 'test', _env: env }),
-    ).rejects.toBeInstanceOf(CcError);
+    ).rejects.toBeInstanceOf(LlmError);
   });
 
-  it('rejected CcError has code ERR_CC_FAILED', async () => {
+  it('rejected LlmError has code ERR_CC_FAILED', async () => {
     const client = fakeClient();
     const env: FakeEnv = { FAKE_CLAUDE_EXIT_CODE: '2', FAKE_CLAUDE_STDOUT: '' };
     let caught: unknown;
@@ -142,8 +142,8 @@ describe('CcClient.run — non-zero exit code', () => {
     } catch (e) {
       caught = e;
     }
-    expect(caught).toBeInstanceOf(CcError);
-    expect((caught as CcError).code).toBe(ErrCode.ERR_CC_FAILED);
+    expect(caught).toBeInstanceOf(LlmError);
+    expect((caught as LlmError).code).toBe(ErrCode.ERR_CC_FAILED);
   });
 });
 
@@ -151,8 +151,8 @@ describe('CcClient.run — non-zero exit code', () => {
 // Timeout
 // ─────────────────────────────────────────────
 
-describe('CcClient.run — timeout', () => {
-  it('rejects with CcError (ERR_CC_TIMEOUT) when subprocess takes too long', async () => {
+describe('LlmClient.run — timeout', () => {
+  it('rejects with LlmError (ERR_CC_TIMEOUT) when subprocess takes too long', async () => {
     const client = fakeClient({ defaultTimeoutMs: 100 });
     const env: FakeEnv = {
       FAKE_CLAUDE_DELAY_MS: '5000',
@@ -166,8 +166,8 @@ describe('CcClient.run — timeout', () => {
     } catch (e) {
       caught = e;
     }
-    expect(caught).toBeInstanceOf(CcError);
-    expect((caught as CcError).code).toBe(ErrCode.ERR_CC_TIMEOUT);
+    expect(caught).toBeInstanceOf(LlmError);
+    expect((caught as LlmError).code).toBe(ErrCode.ERR_CC_TIMEOUT);
   }, 10_000);
 
   it('per-call timeoutMs overrides default', async () => {
@@ -184,7 +184,7 @@ describe('CcClient.run — timeout', () => {
     } catch (e) {
       caught = e;
     }
-    expect((caught as CcError).code).toBe(ErrCode.ERR_CC_TIMEOUT);
+    expect((caught as LlmError).code).toBe(ErrCode.ERR_CC_TIMEOUT);
   }, 10_000);
 });
 
@@ -192,9 +192,9 @@ describe('CcClient.run — timeout', () => {
 // Invalid binary
 // ─────────────────────────────────────────────
 
-describe('CcClient.run — invalid binary', () => {
-  it('rejects with CcError when binary does not exist', async () => {
-    const client = createCcClient({
+describe('LlmClient.run — invalid binary', () => {
+  it('rejects with LlmError when binary does not exist', async () => {
+    const client = createLlmClient({
       claudeBin: 'definitely-not-a-real-binary-xyz',
       defaultTimeoutMs: 5_000,
     });
@@ -206,7 +206,7 @@ describe('CcClient.run — invalid binary', () => {
       caught = e;
     }
 
-    expect(caught).toBeInstanceOf(CcError);
-    expect((caught as CcError).code).toBe(ErrCode.ERR_CC_FAILED);
+    expect(caught).toBeInstanceOf(LlmError);
+    expect((caught as LlmError).code).toBe(ErrCode.ERR_CC_FAILED);
   });
 });

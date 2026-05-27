@@ -1,7 +1,7 @@
 // Local interfaces for shared dependencies.
 // DO NOT import from src/lib/ — those are out of scope for this module.
 
-export interface CcClient {
+export interface LlmClient {
   run(opts: { model: string; prompt: string; timeoutMs?: number }): Promise<{ stdout: string; costUsd: number }>;
 }
 

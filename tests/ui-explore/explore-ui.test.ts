@@ -1,6 +1,6 @@
 /**
  * Vitest tests for the ui-explore module.
- * All tests use a mock CcClient — no real cc subprocess calls.
+ * All tests use a mock LlmClient — no real cc subprocess calls.
  * The tiny-site fixture serves 3 pages (home, about, settings).
  *
  * B-3-* coverage: 20/20 contracts
@@ -14,19 +14,19 @@ import getPort from 'get-port';
 import { startTinySite, type TinySite } from './fixtures/tiny-site/server.js';
 import { exploreUI } from '../../src/ui-explore/index.js';
 import { ExplorationError } from '../../src/ui-explore/error.js';
-import type { CcClient } from '../../src/ui-explore/_deps.js';
+import type { LlmClient } from '../../src/ui-explore/_deps.js';
 
-// ─── Mock CcClient Factories ─────────────────────────────────────────────────
+// ─── Mock LlmClient Factories ─────────────────────────────────────────────────
 
 /**
- * Mock CcClient that returns canned interaction suggestions.
+ * Mock LlmClient that returns canned interaction suggestions.
  */
 function makeMockCcClient(opts?: {
   failOnCall?: number;     // Fail on this call number (1-indexed)
   synthesisResult?: string; // Custom synthesis JSON response
   responseDelay?: number;   // ms delay per call
   quotaError?: boolean;     // Return quota error
-}): CcClient & { callCount: number } {
+}): LlmClient & { callCount: number } {
   let callCount = 0;
   const client = {
     callCount: 0,

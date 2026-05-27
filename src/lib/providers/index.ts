@@ -1,9 +1,9 @@
 /**
  * src/lib/providers/index.ts
- * Provider factory: createProvider(config) → CcProvider
+ * Provider factory: createProvider(config) → LlmProvider
  */
 
-export type { CcProvider } from './types.js';
+export type { LlmProvider } from './types.js';
 export { ClaudeSubprocessProvider, type ClaudeSubprocessConfig } from './claude-subprocess.js';
 export { OpenAICompatProvider, type OpenAICompatConfig } from './openai-compat.js';
 export { MinimaxProvider, type MinimaxConfig, type MinimaxRegion } from './minimax.js';
@@ -18,14 +18,14 @@ export {
 import { ClaudeSubprocessProvider } from './claude-subprocess.js';
 import { OpenAICompatProvider } from './openai-compat.js';
 import { MinimaxProvider } from './minimax.js';
-import type { CcProvider } from './types.js';
+import type { LlmProvider } from './types.js';
 import type { TsprConfig } from '../config.js';
 
 /**
- * Create the appropriate CcProvider from a resolved config object.
+ * Create the appropriate LlmProvider from a resolved config object.
  * Defaults to claude-subprocess if no provider is set.
  */
-export function createProvider(config: TsprConfig): CcProvider {
+export function createProvider(config: TsprConfig): LlmProvider {
   const provider = config.provider ?? 'claude';
 
   switch (provider) {

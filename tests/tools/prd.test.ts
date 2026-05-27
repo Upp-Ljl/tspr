@@ -70,7 +70,7 @@ describe('tspr_generate_standardized_prd', () => {
   // ─── B-3-2/B-A-2: success returns ok + outputPath ─────────────────────────
   it('PRD-002/ARTIFACT-002 (mock): success returns ok + outputPath to standard_prd.json', async () => {
     const p = mkProjectWithCodeSummary();
-    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_PRD_RESPONSE) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(VALID_PRD_RESPONSE) });
     const result = await prdTool.handler({ projectPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as {
       status: string;
@@ -87,7 +87,7 @@ describe('tspr_generate_standardized_prd', () => {
   // ─── B-3-3: userStories is an array ───────────────────────────────────────
   it('PRD-003 (mock): userStories is an array', async () => {
     const p = mkProjectWithCodeSummary();
-    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_PRD_RESPONSE) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(VALID_PRD_RESPONSE) });
     const result = await prdTool.handler({ projectPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as { userStories: unknown };
     expect(Array.isArray(parsed.userStories)).toBe(true);
@@ -96,7 +96,7 @@ describe('tspr_generate_standardized_prd', () => {
   // ─── B-3-4: each userStory has required fields ─────────────────────────────
   it('PRD-004 (mock): each userStory has id, title, description, valid priority', async () => {
     const p = mkProjectWithCodeSummary();
-    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_PRD_RESPONSE) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(VALID_PRD_RESPONSE) });
     const result = await prdTool.handler({ projectPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as {
       userStories: Array<{ id: string; title: string; description: string; priority: string }>;
@@ -115,7 +115,7 @@ describe('tspr_generate_standardized_prd', () => {
     // cc client returns summary JSON for first call, then PRD JSON for second call
     let callCount = 0;
     const ctx = makeContext({
-      ccClient: {
+      llmClient: {
         async run(_opts) {
           callCount++;
           if (callCount === 1) {

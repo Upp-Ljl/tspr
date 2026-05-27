@@ -6,8 +6,8 @@
 
 import { OpenAICompatProvider, type OpenAICompatConfig } from './openai-compat.js';
 import { MINIMAX_DEFAULTS, type ModelAliasMap } from './model-alias.js';
-import type { CcProvider } from './types.js';
-import type { CcRunOptions, CcRunResult } from '../cc.js';
+import type { LlmProvider } from './types.js';
+import type { LlmRunOptions, LlmRunResult } from '../cc.js';
 
 // ─────────────────────────────────────────────
 // MiniMax config
@@ -52,7 +52,7 @@ function resolveBaseURL(cfg: MinimaxConfig): string {
 // MiniMax provider (thin wrapper over openai-compat)
 // ─────────────────────────────────────────────
 
-export class MinimaxProvider implements CcProvider {
+export class MinimaxProvider implements LlmProvider {
   private readonly inner: OpenAICompatProvider;
 
   constructor(cfg: MinimaxConfig = {}) {
@@ -66,7 +66,7 @@ export class MinimaxProvider implements CcProvider {
     this.inner = new OpenAICompatProvider(openaiCfg);
   }
 
-  chat(opts: CcRunOptions): Promise<CcRunResult> {
+  chat(opts: LlmRunOptions): Promise<LlmRunResult> {
     return this.inner.chat(opts);
   }
 }

@@ -85,7 +85,7 @@ export default router;
   // ─── B-5-2/B-A-4: success returns ok + outputPath ─────────────────────────
   it('BEPLAN-002/ARTIFACT-004 (mock): success returns ok + outputPath to backend_test_plan.json', async () => {
     const p = mkProjectWithRoutes();
-    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_BACKEND_PLAN) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(VALID_BACKEND_PLAN) });
     const result = await backendPlanTool.handler({ projectPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as {
       status: string;
@@ -102,7 +102,7 @@ export default router;
   // ─── B-5-3: routesDiscovered is a non-negative integer ────────────────────
   it('BEPLAN-003 (mock): routesDiscovered is a non-negative integer', async () => {
     const p = mkProjectWithRoutes();
-    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_BACKEND_PLAN) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(VALID_BACKEND_PLAN) });
     const result = await backendPlanTool.handler({ projectPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as { routesDiscovered: number };
     expect(typeof parsed.routesDiscovered).toBe('number');
@@ -113,7 +113,7 @@ export default router;
   // ─── B-5-4: each scenario has required fields ──────────────────────────────
   it('BEPLAN-004 (mock): each scenario has id, endpoint, type, description, testHints', async () => {
     const p = mkProjectWithRoutes();
-    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_BACKEND_PLAN) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(VALID_BACKEND_PLAN) });
     const result = await backendPlanTool.handler({ projectPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as {
       scenarios: Array<{
@@ -138,7 +138,7 @@ export default router;
   // ─── B-5-5: scenario types are valid enums ────────────────────────────────
   it('BEPLAN-005 (mock): each scenario type is one of the 5 enum values', async () => {
     const p = mkProjectWithRoutes();
-    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_BACKEND_PLAN) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(VALID_BACKEND_PLAN) });
     const result = await backendPlanTool.handler({ projectPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as {
       scenarios: Array<{ type: string }>;
@@ -152,7 +152,7 @@ export default router;
   // ─── B-5-6: no routes → ok + routesDiscovered=0 + warnings ──────────────
   it('BEPLAN-006: no-routes project returns ok with routesDiscovered=0 + warnings', async () => {
     const p = mkProject(); // just package.json, no route files
-    const ctx = makeContext({ ccClient: makeMockCcClient('{}') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('{}') });
     const result = await backendPlanTool.handler({ projectPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as {
       status: string;
@@ -211,7 +211,7 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       },
     });
 
-    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_BACKEND_PLAN) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(VALID_BACKEND_PLAN) });
     const result = await backendPlanTool.handler({ projectPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as {
       status: string;
@@ -247,7 +247,7 @@ export async function POST(req: Request) {
       },
     });
 
-    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_BACKEND_PLAN) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(VALID_BACKEND_PLAN) });
     const result = await backendPlanTool.handler({ projectPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as {
       status: string;
@@ -279,7 +279,7 @@ export default function handler(req, res) {
       },
     });
 
-    const ctx = makeContext({ ccClient: makeMockCcClient(VALID_BACKEND_PLAN) });
+    const ctx = makeContext({ llmClient: makeMockCcClient(VALID_BACKEND_PLAN) });
     const result = await backendPlanTool.handler({ projectPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as {
       status: string;

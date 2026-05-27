@@ -23,8 +23,8 @@ import Database from 'better-sqlite3';
 
 import { TOOL_DEFINITIONS, TOOL_MAP } from './registry.js';
 import type { ServerContext, ResolvedConfig } from '../types/mcp.js';
-import type { CcClient, Db, Logger, BrowserPool } from './_deps.js';
-import { createCcClient } from '../lib/cc.js';
+import type { LlmClient, Db, Logger, BrowserPool } from './_deps.js';
+import { createLlmClient } from '../lib/cc.js';
 import { loadConfig } from '../lib/config.js';
 
 // ─── Package version ────────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ function initDb(logger: Logger): Db {
 
 // ─── Stub implementations (replaced by lib-impl in Round 5) ─────────────────
 
-function makeCcClient(config: ResolvedConfig & { provider?: string }, logger: Logger): CcClient {
+function makeLlmClient(config: ResolvedConfig & { provider?: string }, logger: Logger): LlmClient {
   // Load full provider config from the config file path
   let localSpriteConfig = {};
   try {
@@ -208,7 +208,7 @@ function makeCcClient(config: ResolvedConfig & { provider?: string }, logger: Lo
   const providerOverride = config.provider as 'claude' | 'openai-compat' | 'minimax' | undefined;
   const mergedConfig = { ...localSpriteConfig, ...(providerOverride ? { provider: providerOverride } : {}) };
 
-  return createCcClient(mergedConfig);
+  return createLlmClient(mergedConfig);
 }
 
 function makeBrowserPool(): BrowserPool {
@@ -238,12 +238,12 @@ export async function startMcpServer(argv: string[] = process.argv.slice(2)): Pr
     process.exit(1);
   }
 
-  const ccClient = makeCcClient(config, logger);
+  const llmClient = makeLlmClient(config, logger);
   const browserPool = makeBrowserPool();
 
   // docker is omitted from serverContext — production sandbox uses createSandbox() directly.
   // Sandbox registry handles its own SIGINT/SIGTERM cleanup.
-  serverContext = { config, db, ccClient, browserPool, logger };
+  serverContext = { config, db, llmClient, browserPool, logger };
 
   const server = new Server(
     { name: 'tspr', version: PKG_VERSION },

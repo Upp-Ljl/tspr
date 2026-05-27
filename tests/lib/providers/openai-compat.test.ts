@@ -6,7 +6,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { OpenAICompatProvider } from '../../../src/lib/providers/openai-compat.js';
-import { CcError } from '../../../src/lib/errors.js';
+import { LlmError } from '../../../src/lib/errors.js';
 import { ErrCode } from '../../../src/lib/errors.js';
 
 // ─────────────────────────────────────────────
@@ -230,31 +230,31 @@ describe('OpenAICompatProvider — model alias mapping', () => {
 // ─────────────────────────────────────────────
 
 describe('OpenAICompatProvider — error handling', () => {
-  it('throws CcError with ERR_CC_FAILED on HTTP 401', async () => {
+  it('throws LlmError with ERR_CC_FAILED on HTTP 401', async () => {
     mockFetch(401, 'Unauthorized');
     const p = new OpenAICompatProvider();
     let caught: unknown;
     try { await p.chat({ model: 'haiku', prompt: 'test' }); } catch (e) { caught = e; }
-    expect(caught).toBeInstanceOf(CcError);
-    expect((caught as CcError).code).toBe(ErrCode.ERR_CC_FAILED);
+    expect(caught).toBeInstanceOf(LlmError);
+    expect((caught as LlmError).code).toBe(ErrCode.ERR_CC_FAILED);
   });
 
-  it('throws CcError with ERR_CC_FAILED on HTTP 500', async () => {
+  it('throws LlmError with ERR_CC_FAILED on HTTP 500', async () => {
     mockFetch(500, 'Internal Server Error');
     const p = new OpenAICompatProvider();
     let caught: unknown;
     try { await p.chat({ model: 'haiku', prompt: 'test' }); } catch (e) { caught = e; }
-    expect(caught).toBeInstanceOf(CcError);
-    expect((caught as CcError).code).toBe(ErrCode.ERR_CC_FAILED);
+    expect(caught).toBeInstanceOf(LlmError);
+    expect((caught as LlmError).code).toBe(ErrCode.ERR_CC_FAILED);
   });
 
-  it('throws CcError with ERR_CC_OUTPUT_INVALID when response has no choices', async () => {
+  it('throws LlmError with ERR_CC_OUTPUT_INVALID when response has no choices', async () => {
     mockFetch(200, {});
     const p = new OpenAICompatProvider();
     let caught: unknown;
     try { await p.chat({ model: 'haiku', prompt: 'test' }); } catch (e) { caught = e; }
-    expect(caught).toBeInstanceOf(CcError);
-    expect((caught as CcError).code).toBe(ErrCode.ERR_CC_OUTPUT_INVALID);
+    expect(caught).toBeInstanceOf(LlmError);
+    expect((caught as LlmError).code).toBe(ErrCode.ERR_CC_OUTPUT_INVALID);
   });
 
   it('error message does NOT contain the API key', async () => {
@@ -268,13 +268,13 @@ describe('OpenAICompatProvider — error handling', () => {
     delete process.env['OPENAI_API_KEY'];
   });
 
-  it('throws CcError when fetch itself throws (network error)', async () => {
+  it('throws LlmError when fetch itself throws (network error)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new Error('ECONNREFUSED')));
     const p = new OpenAICompatProvider();
     let caught: unknown;
     try { await p.chat({ model: 'haiku', prompt: 'test' }); } catch (e) { caught = e; }
-    expect(caught).toBeInstanceOf(CcError);
-    expect((caught as CcError).code).toBe(ErrCode.ERR_CC_FAILED);
+    expect(caught).toBeInstanceOf(LlmError);
+    expect((caught as LlmError).code).toBe(ErrCode.ERR_CC_FAILED);
   });
 });
 
