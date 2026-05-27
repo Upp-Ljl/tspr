@@ -41,15 +41,12 @@ async function frontendPlanHandler(args: unknown, ctx: ServerContext): Promise<T
   const { projectPath } = input;
 
   const startedAt = new Date().toISOString();
-  const paramsHash = crypto.createHash('sha256').update(JSON.stringify(input)).digest('hex');
 
-  let runId: number | bigint = 0;
+  const runId = crypto.randomUUID();
   try {
-    const insert = ctx.db.prepare(
-      `INSERT INTO runs (tool, params_hash, started_at) VALUES (?, ?, ?)`,
-    );
-    const result = insert.run('tspr_generate_frontend_test_plan', paramsHash, startedAt);
-    runId = result.lastInsertRowid;
+    ctx.db.prepare(
+      `INSERT INTO runs (id, tool_name, project_path, started_at, status) VALUES (?, ?, ?, ?, ?)`,
+    ).run(runId, 'tspr_generate_frontend_test_plan', projectPath, startedAt, 'in-progress');
   } catch (err) {
     ctx.logger.warn('Failed to insert run row', { err });
   }
@@ -58,32 +55,19 @@ async function frontendPlanHandler(args: unknown, ctx: ServerContext): Promise<T
   let errorCode: string | null = null;
 
   try {
-    // Look up most recent session for this projectPath
+    // Look up the most recent bootstrap session for this projectPath directly from sessions table.
+    // bootstrap.ts guarantees a row exists there after a successful call (B-4-7, B-4-8).
     let localPort: number | null = null;
     try {
-      const row = ctx.db.prepare(
-        `SELECT session_id, params_hash FROM runs WHERE tool = ? AND outcome = ? ORDER BY id DESC LIMIT 1`,
-      ).get('tspr_bootstrap_tests', 'ok') as { session_id: string; params_hash: string } | undefined;
+      const sessionRow = ctx.db.prepare(
+        `SELECT local_port FROM sessions WHERE project_path = ? ORDER BY created_at DESC LIMIT 1`,
+      ).get(projectPath) as { local_port: number } | undefined;
 
-      if (row) {
-        // We store session by projectPath; let's look for the session with matching projectPath
-        // Since we store params_hash, we need to check the actual session records
-        // Let's use sessions table approach: query all bootstrap runs and find most recent for this projectPath
-        const allBootstraps = ctx.db.prepare(
-          `SELECT session_id, params_hash FROM runs WHERE tool = ? AND outcome = ? ORDER BY id DESC`,
-        ).all('tspr_bootstrap_tests', 'ok') as Array<{ session_id: string; params_hash: string }>;
-
-        // Find the most recent session for this projectPath by querying sessions table
-        const sessionRow = ctx.db.prepare(
-          `SELECT local_port FROM sessions WHERE project_path = ? ORDER BY created_at DESC LIMIT 1`,
-        ).get(projectPath) as { local_port: number } | undefined;
-
-        if (sessionRow) {
-          localPort = sessionRow.local_port;
-        }
+      if (sessionRow) {
+        localPort = sessionRow.local_port;
       }
     } catch {
-      // sessions table may not exist yet in fallback mode
+      // sessions table may not exist in degraded mode
     }
 
     if (localPort === null) {
@@ -237,10 +221,9 @@ Return ONLY valid JSON.`;
     };
 
     const endedAt = new Date().toISOString();
-    const durationMs = new Date(endedAt).getTime() - new Date(startedAt).getTime();
     try {
-      ctx.db.prepare(`UPDATE runs SET outcome = ?, ended_at = ?, duration_ms = ? WHERE id = ?`)
-        .run(outcome, endedAt, durationMs, runId);
+      ctx.db.prepare(`UPDATE runs SET status = ?, completed_at = ? WHERE id = ?`)
+        .run('ok', endedAt, runId);
     } catch { /* ignore */ }
 
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
@@ -251,10 +234,9 @@ Return ONLY valid JSON.`;
       errorCode = data?.code ?? null;
     }
     const endedAt = new Date().toISOString();
-    const durationMs = new Date(endedAt).getTime() - new Date(startedAt).getTime();
     try {
-      ctx.db.prepare(`UPDATE runs SET outcome = ?, ended_at = ?, duration_ms = ?, error_code = ? WHERE id = ?`)
-        .run(outcome, endedAt, durationMs, errorCode, runId);
+      ctx.db.prepare(`UPDATE runs SET status = ?, completed_at = ?, error_code = ? WHERE id = ?`)
+        .run('error', endedAt, errorCode, runId);
     } catch { /* ignore */ }
     throw err;
   }

@@ -52,43 +52,129 @@ export function createTestProject(opts: CreateTestProjectOptions = {}): TestProj
 // ─── Mock DB ──────────────────────────────────────────────────────────────────
 
 export interface MockDb extends Db {
-  _rows: Map<string, unknown[]>;
-  _lastId: number;
+  /** All rows stored per table name. Mutated on every INSERT/UPDATE. */
+  _tables: Map<string, Array<Record<string, unknown>>>;
+  /** Expose rows for a given table (for test assertions). */
+  getRows(table: string): Array<Record<string, unknown>>;
 }
 
+/**
+ * A lightweight in-memory mock DB that:
+ *  - Parses INSERT column lists and stores named rows.
+ *  - Returns the latest matching row for SELECT … WHERE project_path = ?
+ *    and SELECT … WHERE id = ?.
+ *  - Applies UPDATE status/completed_at by id.
+ *
+ * This is intentionally minimal — it covers exactly the SQL shapes used by
+ * bootstrap.ts and frontendPlan.ts.
+ */
 export function makeMockDb(): MockDb {
-  const tables = new Map<string, unknown[]>();
-  let lastId = 0;
+  const tables = new Map<string, Array<Record<string, unknown>>>();
+  let autoId = 0;
+
+  function getTable(name: string): Array<Record<string, unknown>> {
+    if (!tables.has(name)) tables.set(name, []);
+    return tables.get(name)!;
+  }
+
+  /** Parse "INSERT INTO <table> (col1, col2, ...) VALUES (?, ?, ...)" */
+  function handleInsert(sql: string, args: unknown[]): { changes: number; lastInsertRowid: number | bigint } {
+    const m = /INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)/i.exec(sql);
+    if (m) {
+      const tableName = m[1];
+      const cols = m[2].split(',').map((c) => c.trim());
+      const row: Record<string, unknown> = {};
+      for (let i = 0; i < cols.length; i++) {
+        row[cols[i]] = args[i];
+      }
+      getTable(tableName).push(row);
+    }
+    autoId++;
+    return { changes: 1, lastInsertRowid: autoId };
+  }
+
+  /** Parse simple UPDATE … SET col=? WHERE id=? */
+  function handleUpdate(sql: string, args: unknown[]): { changes: number; lastInsertRowid: number | bigint } {
+    const tableM = /UPDATE\s+(\w+)\s+SET\s+(.+?)\s+WHERE\s+id\s*=\s*\?/i.exec(sql);
+    if (tableM) {
+      const tableName = tableM[1];
+      const setPart = tableM[2];
+      const setCols = setPart.split(',').map((s) => s.trim().replace(/\s*=\s*\?$/, '').trim());
+      const idArg = args[setCols.length]; // id is the last ?
+      const rows = getTable(tableName);
+      for (const row of rows) {
+        if (row['id'] === idArg) {
+          for (let i = 0; i < setCols.length; i++) {
+            row[setCols[i]] = args[i];
+          }
+        }
+      }
+    }
+    return { changes: 1, lastInsertRowid: 0 };
+  }
+
+  /** SELECT … FROM <table> WHERE project_path = ? ORDER BY created_at DESC LIMIT 1 */
+  function handleSelect(sql: string, args: unknown[]): unknown {
+    const tableM = /FROM\s+(\w+)/i.exec(sql);
+    if (!tableM) return undefined;
+    const tableName = tableM[1];
+    const rows = getTable(tableName);
+
+    // Filter by project_path if present in WHERE
+    const filterByPath = /WHERE\s+project_path\s*=\s*\?/i.test(sql);
+    const filterById = /WHERE\s+id\s*=\s*\?/i.test(sql);
+
+    let filtered = rows;
+    if (filterByPath && args[0] !== undefined) {
+      filtered = rows.filter((r) => r['project_path'] === args[0]);
+    } else if (filterById && args[0] !== undefined) {
+      filtered = rows.filter((r) => r['id'] === args[0]);
+    }
+
+    // Sort by created_at desc (string ISO sort works correctly)
+    filtered = [...filtered].sort((a, b) => {
+      const ta = String(a['created_at'] ?? '');
+      const tb = String(b['created_at'] ?? '');
+      return tb.localeCompare(ta);
+    });
+
+    const isAll = /\.all\b/.test(sql); // heuristic — not needed; callers use .get()/.all()
+    return filtered[0];
+  }
 
   function makeStmt(sql: string): Stmt {
     const isInsert = /^\s*INSERT/i.test(sql);
     const isUpdate = /^\s*UPDATE/i.test(sql);
-    const isSelect = /^\s*SELECT/i.test(sql);
 
     return {
-      run(..._args: unknown[]) {
-        lastId++;
-        return { changes: 1, lastInsertRowid: lastId };
+      run(...args: unknown[]) {
+        if (isInsert) return handleInsert(sql, args);
+        if (isUpdate) return handleUpdate(sql, args);
+        return { changes: 0, lastInsertRowid: 0 };
       },
-      get(..._args: unknown[]) {
-        // Return the first row from 'runs' table
-        const runsTable = tables.get('runs') as Array<Record<string, unknown>> | undefined;
-        if (isSelect && runsTable && runsTable.length > 0) {
-          return runsTable[0];
+      get(...args: unknown[]) {
+        return handleSelect(sql, args);
+      },
+      all(...args: unknown[]) {
+        const tableM = /FROM\s+(\w+)/i.exec(sql);
+        if (!tableM) return [];
+        const tableName = tableM[1];
+        const rows = getTable(tableName);
+        const filterByPath = /WHERE\s+project_path\s*=\s*\?/i.test(sql);
+        if (filterByPath && args[0] !== undefined) {
+          return rows.filter((r) => r['project_path'] === args[0]);
         }
-        return undefined;
-      },
-      all(..._args: unknown[]) {
-        const runsTable = tables.get('runs') as unknown[] | undefined;
-        return runsTable ?? [];
+        return rows;
       },
     };
   }
 
   return {
-    _rows: tables,
-    _lastId: lastId,
-    exec(_sql: string) { /* no-op */ },
+    _tables: tables,
+    getRows(table: string) {
+      return getTable(table);
+    },
+    exec(_sql: string) { /* no-op — schema is implicit */ },
     prepare(sql: string) {
       return makeStmt(sql);
     },

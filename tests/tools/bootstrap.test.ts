@@ -1,6 +1,7 @@
 /**
  * Tests for Tool 1: tspr_bootstrap_tests
- * Covers: B-1-1 through B-1-10, B-V-1, B-V-2, B-E-1, B-E-2, B-E-3, B-E-5, B-E-6
+ * Covers: B-1-1 through B-1-10, B-V-1, B-V-2, B-E-1, B-E-2, B-E-3, B-E-5, B-E-6,
+ *         B-4-8 sessions persistence (bootstrap inserts row so downstream tools find it)
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'node:fs';
@@ -10,6 +11,7 @@ import { bootstrapTool, bootstrapInputSchema } from '../../src/tools/bootstrap.j
 import {
   createTestProject,
   makeContext,
+  makeMockDb,
   makeMockDockerManager,
   getMcpErrorData,
   getMcpErrorCode,
@@ -263,5 +265,46 @@ describe('tspr_bootstrap_tests', () => {
         expect(err.message).toContain(data.code);
       }
     }
+  });
+
+  // ─── B-4-8: sessions row persisted after successful bootstrap ─────────────
+  it('BOOTSTRAP-011 (B-4-8): after bootstrap, sessions table has exactly 1 row matching returned sessionId', async () => {
+    const p = mkProject();
+    const db = makeMockDb();
+    const ctx = makeContext({ db });
+    const args = {
+      projectPath: p.projectPath,
+      type: 'frontend' as const,
+      testScope: 'codebase' as const,
+      localPort: 5173,
+    };
+    const result = await bootstrapTool.handler(args, ctx);
+    const parsed = JSON.parse(result.content[0].text) as { sessionId: string };
+
+    const sessionRows = db.getRows('sessions');
+    // Assertion 1: exactly one session row was written
+    expect(sessionRows).toHaveLength(1);
+    // Assertion 2: the row's id matches the sessionId returned to the caller
+    expect(sessionRows[0]['id']).toBe(parsed.sessionId);
+  });
+
+  // ─── B-4-8: sessions row has correct projectPath and localPort ────────────
+  it('BOOTSTRAP-012 (B-4-8): sessions row stores project_path and local_port correctly', async () => {
+    const p = mkProject();
+    const db = makeMockDb();
+    const ctx = makeContext({ db });
+    const args = {
+      projectPath: p.projectPath,
+      type: 'backend' as const,
+      testScope: 'diff' as const,
+      localPort: 3000,
+    };
+    await bootstrapTool.handler(args, ctx);
+
+    const sessionRows = db.getRows('sessions');
+    // Assertion 3: project_path stored correctly
+    expect(sessionRows[0]['project_path']).toBe(p.projectPath);
+    // Assertion 4: local_port stored correctly
+    expect(sessionRows[0]['local_port']).toBe(3000);
   });
 });

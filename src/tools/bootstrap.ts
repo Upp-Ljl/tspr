@@ -109,32 +109,38 @@ async function bootstrapHandler(args: unknown, ctx: ServerContext): Promise<Tool
   const { projectType, framework } = detectFramework(projectPath, type);
   const warnings: string[] = [];
 
-  // Insert session row into SQLite runs table
-  const startedAt = new Date().toISOString();
-  const paramsHash = crypto.createHash('sha256').update(JSON.stringify(input)).digest('hex');
+  const createdAt = new Date().toISOString();
 
-  let runId: number | bigint;
+  // Persist session row so downstream tools (frontendPlan, backendPlan, rerunTests)
+  // can look it up by projectPath via the sessions table.
   try {
-    const insert = ctx.db.prepare(
-      `INSERT INTO runs (session_id, tool, params_hash, started_at) VALUES (?, ?, ?, ?)`,
+    ctx.db.prepare(
+      `INSERT INTO sessions (id, project_path, local_port, type, test_scope, detected_framework, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      sessionId,
+      projectPath,
+      input.localPort,
+      type,
+      input.testScope,
+      framework,
+      createdAt,
+      createdAt,
     );
-    const result = insert.run(sessionId, 'tspr_bootstrap_tests', paramsHash, startedAt);
-    runId = result.lastInsertRowid;
   } catch (err) {
-    ctx.logger.warn('Failed to insert run row', { err });
-    runId = 0;
+    ctx.logger.warn('Failed to insert sessions row', { err });
   }
 
-  const endedAt = new Date().toISOString();
-  const durationMs = new Date(endedAt).getTime() - new Date(startedAt).getTime();
-
+  // Record this invocation in the runs audit table.
+  const startedAt = createdAt;
+  const runId = crypto.randomUUID();
   try {
-    const update = ctx.db.prepare(
-      `UPDATE runs SET outcome = ?, ended_at = ?, duration_ms = ? WHERE id = ?`,
-    );
-    update.run('ok', endedAt, durationMs, runId);
+    ctx.db.prepare(
+      `INSERT INTO runs (id, tool_name, project_path, started_at, completed_at, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(runId, 'tspr_bootstrap_tests', projectPath, startedAt, startedAt, 'ok');
   } catch (err) {
-    ctx.logger.warn('Failed to update run row', { err });
+    ctx.logger.warn('Failed to insert runs row', { err });
   }
 
   const output = {
