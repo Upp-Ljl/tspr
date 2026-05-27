@@ -25,7 +25,8 @@ export interface ServerContext {
   config: ResolvedConfig;
   db: Db;
   ccClient: CcClient;
-  docker: DockerManager;
+  /** Optional: present in tests for mock-based ping checks; absent in production (sandbox handles Docker directly). */
+  docker?: DockerManager;
   browserPool: BrowserPool;
   logger: Logger;
 }

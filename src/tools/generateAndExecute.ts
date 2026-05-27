@@ -10,6 +10,7 @@ import * as crypto from 'node:crypto';
 import * as os from 'node:os';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolResult, ServerContext } from '../types/mcp.js';
+import { createSandbox, SandboxError } from '../sandbox/index.js';
 
 export const generateAndExecuteInputSchema = z.object({
   projectName: z.string(),
@@ -122,18 +123,21 @@ export async function runExecute(
     allScenarios = allScenarios.slice(0, 10);
   }
 
-  // Check Docker
-  try {
-    await ctx.docker.ping();
-  } catch {
-    throw new McpError(
-      ErrorCode.InternalError,
-      'ERR_DOCKER_UNAVAILABLE',
-      {
-        code: 'ERR_DOCKER_UNAVAILABLE',
-        suggestion: 'Start Docker Desktop or install Docker and ensure the daemon is running.',
-      },
-    );
+  // Check Docker — only when an injected DockerManager is present (test path).
+  // In production (sandbox=undefined) createSandbox performs its own docker check.
+  if (!sandbox && ctx.docker) {
+    try {
+      await ctx.docker.ping();
+    } catch {
+      throw new McpError(
+        ErrorCode.InternalError,
+        'ERR_DOCKER_UNAVAILABLE',
+        {
+          code: 'ERR_DOCKER_UNAVAILABLE',
+          suggestion: 'Start Docker Desktop or install Docker and ensure the daemon is running.',
+        },
+      );
+    }
   }
 
   // Generate test code via cc
@@ -202,30 +206,57 @@ Return ONLY the TypeScript code, no markdown fences.`;
       );
     }
   } else {
-    // Use ctx.docker directly
-    let container;
+    // Production path: use real sandbox module (createSandbox / exec / pullArtifacts / dispose).
+    // The generated tests dir is under projectPath/.tspr/generated_tests, so it is already
+    // available inside the container at /work/.tspr/generated_tests.
+    let handle;
     try {
-      container = await ctx.docker.createContainer({
-        image: ctx.config.dockerImage,
-        cmd: ['sh', '-c', 'cd /workspace && npm install --silent && npx vitest run /tests/*.spec.ts --reporter=json 2>&1 || true'],
-        binds: [
-          `${projectPath}:/workspace`,
-          `${generatedTestsDir}:/tests`,
-        ],
-        labels: { tspr: 'true' },
+      handle = await createSandbox({
+        projectPath,
+        projectType: 'backend',
+        env: { CI: '1' },
       });
-    } catch {
-      throw new McpError(
-        ErrorCode.InternalError,
-        'ERR_DOCKER_PULL_FAILED',
-        { code: 'ERR_DOCKER_PULL_FAILED', suggestion: 'Check internet connectivity or Docker Hub access.' },
-      );
+    } catch (err) {
+      ctx.logger.error('sandbox create failed', { err: String(err) });
+      if (err instanceof SandboxError) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          err.code,
+          { code: err.code, suggestion: 'Start Docker Desktop or install Docker and ensure the daemon is running.', cause: String(err) },
+        );
+      }
+      throw err;
     }
 
-    // We don't have real exec here without full dockerode; create a fake result
-    sandboxResult = { stdout: '{}', stderr: '', exitCode: 0 };
-    await container.stop({ t: 5 }).catch(() => { /* ignore */ });
-    await container.remove().catch(() => { /* ignore */ });
+    try {
+      const installResult = await handle.exec(
+        'npm install --silent --no-audit --no-fund',
+        { cwd: '/work', timeout: 180_000 },
+      );
+      if (installResult.exitCode !== 0) {
+        ctx.logger.warn('npm install exited non-zero', { exitCode: installResult.exitCode, stderr: installResult.stderr });
+      }
+
+      const testResult = await handle.exec(
+        'npx vitest run .tspr/generated_tests/ --reporter=json 2>&1 || true',
+        { cwd: '/work', timeout: ctx.config.executeTimeoutMs },
+      );
+      sandboxResult = { stdout: testResult.stdout, stderr: testResult.stderr, exitCode: testResult.exitCode };
+
+      await handle.pullArtifacts();
+    } catch (err) {
+      ctx.logger.error('sandbox exec failed', { err: String(err) });
+      if (err instanceof SandboxError) {
+        throw new McpError(
+          ErrorCode.InternalError,
+          err.code,
+          { code: err.code, suggestion: 'Docker sandbox execution failed.', cause: String(err) },
+        );
+      }
+      throw err;
+    } finally {
+      await handle.dispose();
+    }
   }
 
   // Parse test results from sandbox stdout
@@ -239,17 +270,17 @@ Return ONLY the TypeScript code, no markdown fences.`;
     // Try to find JSON in output (vitest json reporter)
     const jsonMatch = jsonOutput.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
     if (jsonMatch) {
+      // vitest --reporter=json may emit either testResults (old) or assertionResults (new) per file entry.
       const parsed = JSON.parse(jsonMatch[1]) as {
         numPassedTests?: number;
         numFailedTests?: number;
         numPendingTests?: number;
         testResults?: Array<{
-          testFilePath: string;
-          testResults: Array<{
-            status: string;
-            fullName: string;
-            failureMessages?: string[];
-          }>;
+          testFilePath?: string;
+          name?: string;
+          /** vitest >= 1 uses assertionResults; older jest-compat reporters use testResults */
+          assertionResults?: Array<{ status: string; fullName: string; failureMessages?: string[] }>;
+          testResults?: Array<{ status: string; fullName: string; failureMessages?: string[] }>;
         }>;
       };
 
@@ -259,7 +290,10 @@ Return ONLY the TypeScript code, no markdown fences.`;
 
       if (parsed.testResults) {
         for (const file of parsed.testResults) {
-          for (const t of file.testResults) {
+          // Support both assertionResults (vitest >= 1) and testResults (older jest-compat format)
+          const tests = file.assertionResults ?? file.testResults ?? [];
+          const filePath = file.testFilePath ?? file.name ?? '';
+          for (const t of tests) {
             if (t.status === 'failed') {
               const failureMsg = (t.failureMessages || []).join('\n');
               failures.push({
@@ -267,7 +301,7 @@ Return ONLY the TypeScript code, no markdown fences.`;
                 title: t.fullName,
                 stack: failureMsg,
                 suggestedFixRegion: {
-                  file: path.relative(projectPath, file.testFilePath),
+                  file: path.relative(projectPath, filePath),
                   lineStart: 1,
                   lineEnd: 10,
                   why: 'Test failed — check the stack trace for the root cause.',

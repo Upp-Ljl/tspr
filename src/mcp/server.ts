@@ -23,7 +23,7 @@ import Database from 'better-sqlite3';
 
 import { TOOL_DEFINITIONS, TOOL_MAP } from './registry.js';
 import type { ServerContext, ResolvedConfig } from '../types/mcp.js';
-import type { CcClient, Db, Logger, DockerManager, BrowserPool, DockerContainer } from './_deps.js';
+import type { CcClient, Db, Logger, BrowserPool } from './_deps.js';
 import { createCcClient } from '../lib/cc.js';
 import { loadConfig } from '../lib/config.js';
 
@@ -211,54 +211,6 @@ function makeCcClient(config: ResolvedConfig & { provider?: string }, logger: Lo
   return createCcClient(mergedConfig);
 }
 
-function makeDockerManager(logger: Logger): DockerManager {
-  const containers = new Set<DockerContainer>();
-
-  return {
-    async ping() {
-      // Try using dockerode if available
-      try {
-        const Dockerode = (await import('dockerode')).default;
-        const docker = new Dockerode();
-        await docker.ping();
-      } catch (err) {
-        logger.debug('Docker ping failed', { err: String(err) });
-        throw new Error('Docker daemon not reachable');
-      }
-    },
-
-    async createContainer(opts) {
-      const Dockerode = (await import('dockerode')).default;
-      const docker = new Dockerode();
-      const container = await docker.createContainer({
-        Image: opts.image,
-        Cmd: opts.cmd,
-        HostConfig: {
-          Binds: opts.binds,
-        },
-        Labels: { tspr: 'true', ...(opts.labels ?? {}) },
-      });
-      const wrapped: DockerContainer = {
-        id: container.id,
-        stop: (o) => container.stop(o),
-        remove: () => container.remove(),
-      };
-      containers.add(wrapped);
-      return wrapped;
-    },
-
-    async teardownAll() {
-      for (const c of containers) {
-        try {
-          await c.stop({ t: 2 });
-          await c.remove();
-        } catch { /* best-effort */ }
-      }
-      containers.clear();
-    },
-  };
-}
-
 function makeBrowserPool(): BrowserPool {
   return {
     async destroyAll() {
@@ -287,10 +239,11 @@ export async function startMcpServer(argv: string[] = process.argv.slice(2)): Pr
   }
 
   const ccClient = makeCcClient(config, logger);
-  const docker = makeDockerManager(logger);
   const browserPool = makeBrowserPool();
 
-  serverContext = { config, db, ccClient, docker, browserPool, logger };
+  // docker is omitted from serverContext — production sandbox uses createSandbox() directly.
+  // Sandbox registry handles its own SIGINT/SIGTERM cleanup.
+  serverContext = { config, db, ccClient, browserPool, logger };
 
   const server = new Server(
     { name: 'tspr', version: PKG_VERSION },
@@ -373,9 +326,6 @@ export async function startMcpServer(argv: string[] = process.argv.slice(2)): Pr
     }
 
     try {
-      await docker.teardownAll();
-    } catch { /* ignore */ }
-    try {
       await browserPool.destroyAll();
     } catch { /* ignore */ }
     try {
@@ -390,6 +340,6 @@ export async function startMcpServer(argv: string[] = process.argv.slice(2)): Pr
 
   process.on('uncaughtException', (err) => {
     process.stderr.write(`[tspr] uncaughtException: ${String(err)}\n`);
-    void docker.teardownAll().finally(() => process.exit(1));
+    process.exit(1);
   });
 }

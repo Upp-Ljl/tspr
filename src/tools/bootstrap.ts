@@ -91,18 +91,20 @@ async function bootstrapHandler(args: unknown, ctx: ServerContext): Promise<Tool
     );
   }
 
-  // Check Docker daemon
-  try {
-    await ctx.docker.ping();
-  } catch {
-    throw new McpError(
-      ErrorCode.InternalError,
-      'ERR_DOCKER_UNAVAILABLE',
-      {
-        code: 'ERR_DOCKER_UNAVAILABLE',
-        suggestion: 'Start Docker Desktop or install Docker and ensure the daemon is running.',
-      },
-    );
+  // Check Docker daemon (only when DockerManager is injected; production relies on sandbox internals)
+  if (ctx.docker) {
+    try {
+      await ctx.docker.ping();
+    } catch {
+      throw new McpError(
+        ErrorCode.InternalError,
+        'ERR_DOCKER_UNAVAILABLE',
+        {
+          code: 'ERR_DOCKER_UNAVAILABLE',
+          suggestion: 'Start Docker Desktop or install Docker and ensure the daemon is running.',
+        },
+      );
+    }
   }
 
   const sessionId = crypto.randomUUID();
