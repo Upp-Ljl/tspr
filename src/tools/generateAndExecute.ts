@@ -2,6 +2,8 @@
  * Tool 6: tspr_generate_code_and_execute
  *
  * Reads test plan, generates test code via cc, runs in Docker, returns structured results.
+ * Returns a `summary` markdown field that cc can relay verbatim to the user.
+ * Returns a `_timeline` array with per-step timing + LLM trace for the transparency panel.
  */
 import { z } from 'zod';
 import * as fs from 'node:fs';
@@ -12,6 +14,7 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolResult, ServerContext } from '../types/mcp.js';
 import { createSandbox, SandboxError } from '../sandbox/index.js';
 import { renderHtmlReport } from '../report/html-renderer.js';
+import { computeStableIssueId } from '../dashboard/issues.js';
 
 export const generateAndExecuteInputSchema = z.object({
   projectName: z.string(),
@@ -21,6 +24,17 @@ export const generateAndExecuteInputSchema = z.object({
 });
 
 type GenerateAndExecuteInput = z.infer<typeof generateAndExecuteInputSchema>;
+
+/** One step in the tool-6 execution timeline (transparency data) */
+export interface TimelineStep {
+  step: 'plan-load' | 'cc-generate' | 'sandbox-exec' | 'parse-results' | 'write-artifacts';
+  start: number;        // ms since epoch (Date.now())
+  durationMs: number;
+  modelUsed?: string;   // e.g. 'claude-sonnet-4-6'
+  costUsd?: number;     // estimated; 0 if unknown
+  promptChars?: number;
+  responseChars?: number;
+}
 
 export interface ExecuteResult {
   status: 'ok' | 'partial' | 'all-failed';
@@ -33,6 +47,8 @@ export interface ExecuteResult {
   warnings: string[];
   failures: Array<{
     testId: string;
+    /** Stable 16-char hex issue ID (hash of testId + projectPath) */
+    issueId: string;
     title: string;
     stack: string;
     domSnapshot?: string;
@@ -45,6 +61,16 @@ export interface ExecuteResult {
     };
     suggestedPatch?: string;
   }>;
+  /**
+   * Pre-formatted markdown summary suitable for direct relay to user via cc chat.
+   * cc should relay this verbatim — no need to summarize the raw JSON.
+   */
+  summary: string;
+  /**
+   * Per-step timing + LLM trace. Underscore prefix = transparency metadata.
+   * May be omitted in compact mode by the caller.
+   */
+  _timeline: TimelineStep[];
 }
 
 // Sandbox interface for Docker (mock in tests, real in Round 5)
@@ -64,6 +90,83 @@ function computeStatus(passed: number, failed: number, skipped: number): 'ok' | 
   return 'all-failed';
 }
 
+// ─── Summary builder ──────────────────────────────────────────────────────────
+
+function buildSummary(
+  projectName: string,
+  totalTests: number,
+  passed: number,
+  failed: number,
+  skipped: number,
+  failures: ExecuteResult['failures'],
+  warnings: string[],
+  modelId: string,
+  durationMs: number,
+  runId: string,
+  reportPath: string,
+): string {
+  const lines: string[] = [];
+
+  const overallIcon = failed === 0 ? '✅' : (passed > 0 ? '⚠️' : '❌');
+  lines.push(
+    `${overallIcon} tspr ran ${totalTests} test${totalTests !== 1 ? 's' : ''} against **${projectName}**. ` +
+    `${passed} pass${passed !== 1 ? '' : 'es'}, ${failed} fail${failed !== 1 ? '' : 's'}${skipped > 0 ? `, ${skipped} skipped` : ''}.`,
+  );
+
+  if (warnings.length > 0) {
+    lines.push('');
+    for (const w of warnings) {
+      lines.push(`> ⚠️ ${w}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    lines.push('');
+    const displayCount = Math.min(failures.length, 5);
+    for (let i = 0; i < displayCount; i++) {
+      const f = failures[i];
+      const issueNum = i + 1;
+      lines.push(`❌ **Issue ${issueNum}** — \`${f.title}\``);
+
+      const fix = f.suggestedFixRegion;
+      if (fix) {
+        lines.push(`   File: \`${fix.file}:${fix.lineStart}\``);
+        if (fix.why) {
+          lines.push(`   Suggested fix: ${fix.why}`);
+        }
+      }
+
+      // Inline first error line if meaningful
+      const firstStackLine = f.stack?.split('\n')[0]?.trim();
+      if (firstStackLine && !firstStackLine.startsWith('at ')) {
+        lines.push(`   Error: ${firstStackLine.slice(0, 120)}`);
+      }
+
+      if (f.suggestedPatch) {
+        lines.push(`   Apply with: \`tspr apply-fix ${f.issueId}\` or in cc: "apply tspr issue ${issueNum}"`);
+      } else if (fix) {
+        lines.push(`   No auto-fix patch. Regenerate with additionalInstruction for better hints.`);
+      }
+      lines.push('');
+    }
+    if (failures.length > displayCount) {
+      lines.push(`_… and ${failures.length - displayCount} more — see local report below._`);
+      lines.push('');
+    }
+  }
+
+  const costMs = durationMs < 1000 ? `${durationMs}ms` : `${(durationMs / 1000).toFixed(0)}s`;
+  const modelLabel = modelId || 'unknown';
+  const shortRunId = runId.slice(0, 8);
+  lines.push(`Cost: ${modelLabel} · ${costMs} · runId: ${shortRunId}`);
+  lines.push(`Local report: file:///${reportPath.replace(/\\/g, '/')}`);
+  lines.push(`Dashboard: \`tspr dashboard\``);
+
+  return lines.join('\n');
+}
+
+// ─── runExecute ───────────────────────────────────────────────────────────────
+
 export async function runExecute(
   input: GenerateAndExecuteInput,
   ctx: ServerContext,
@@ -71,6 +174,10 @@ export async function runExecute(
 ): Promise<ExecuteResult> {
   const { projectPath, projectName, testIds, additionalInstruction } = input;
   const tsprDir = path.join(projectPath, '.tspr');
+  const _timeline: TimelineStep[] = [];
+
+  // ── Step: plan-load ───────────────────────────────────────────────────────
+  const planLoadStart = Date.now();
 
   // Load test plans
   const frontendPlanPath = path.join(tsprDir, 'frontend_test_plan.json');
@@ -116,6 +223,7 @@ export async function runExecute(
   }
 
   const warnings: string[] = [];
+  const originalCount = allScenarios.length;
   // Cap at 10
   if (allScenarios.length > 10) {
     warnings.push(
@@ -123,6 +231,12 @@ export async function runExecute(
     );
     allScenarios = allScenarios.slice(0, 10);
   }
+
+  _timeline.push({
+    step: 'plan-load',
+    start: planLoadStart,
+    durationMs: Date.now() - planLoadStart,
+  });
 
   // Check Docker — only when an injected DockerManager is present (test path).
   // In production (sandbox=undefined) createSandbox performs its own docker check.
@@ -141,7 +255,8 @@ export async function runExecute(
     }
   }
 
-  // Generate test code via cc
+  // ── Step: cc-generate ─────────────────────────────────────────────────────
+  const ccGenStart = Date.now();
   const generatedTestsDir = path.join(tsprDir, 'generated_tests');
   fs.mkdirSync(generatedTestsDir, { recursive: true });
 
@@ -157,13 +272,20 @@ Generate a single TypeScript test file using vitest. Import from 'vitest' and us
 Return ONLY the TypeScript code, no markdown fences.`;
 
   let generatedCode = '';
+  let ccDurationMs = 0;
+  let ccResponseChars = 0;
+  const modelUsed = ctx.config.model ?? 'unknown';
+
   try {
+    const ccStart = Date.now();
     const ccResult = await ctx.llmClient.run({
       model: 'sonnet',
       prompt: codeGenPrompt,
       timeoutMs: 120_000,
     });
+    ccDurationMs = Date.now() - ccStart;
     generatedCode = ccResult.stdout.trim().replace(/^```(?:typescript|ts)?\s*/i, '').replace(/```\s*$/, '');
+    ccResponseChars = generatedCode.length;
   } catch {
     throw new McpError(
       ErrorCode.InternalError,
@@ -171,6 +293,16 @@ Return ONLY the TypeScript code, no markdown fences.`;
       { code: 'ERR_CC_FAILED', suggestion: 'Check that the claude CLI is installed and authenticated.' },
     );
   }
+
+  _timeline.push({
+    step: 'cc-generate',
+    start: ccGenStart,
+    durationMs: ccDurationMs,
+    modelUsed,
+    costUsd: 0,   // cost not tracked at this layer yet
+    promptChars: codeGenPrompt.length,
+    responseChars: ccResponseChars,
+  });
 
   const specFilePath = path.join(generatedTestsDir, `${projectName}.spec.ts`);
   try {
@@ -182,6 +314,9 @@ Return ONLY the TypeScript code, no markdown fences.`;
       { code: 'ERR_WRITE_FAILED', suggestion: 'Check filesystem permissions.', cause: String(err) },
     );
   }
+
+  // ── Step: sandbox-exec ────────────────────────────────────────────────────
+  const sandboxStart = Date.now();
 
   // Execute in Docker sandbox (or mock)
   let sandboxResult: { stdout: string; stderr: string; exitCode: number };
@@ -280,7 +415,15 @@ Return ONLY the TypeScript code, no markdown fences.`;
     }
   }
 
-  // Parse test results from sandbox stdout
+  _timeline.push({
+    step: 'sandbox-exec',
+    start: sandboxStart,
+    durationMs: Date.now() - sandboxStart,
+  });
+
+  // ── Step: parse-results ───────────────────────────────────────────────────
+  const parseStart = Date.now();
+
   let passed = 0;
   let failed = 0;
   let skipped = 0;
@@ -317,8 +460,10 @@ Return ONLY the TypeScript code, no markdown fences.`;
           for (const t of tests) {
             if (t.status === 'failed') {
               const failureMsg = (t.failureMessages || []).join('\n');
+              const issueId = computeStableIssueId(t.fullName, projectPath);
               failures.push({
                 testId: t.fullName,
+                issueId,
                 title: t.fullName,
                 stack: failureMsg,
                 suggestedFixRegion: {
@@ -340,12 +485,38 @@ Return ONLY the TypeScript code, no markdown fences.`;
     skipped = 0;
   }
 
+  _timeline.push({
+    step: 'parse-results',
+    start: parseStart,
+    durationMs: Date.now() - parseStart,
+  });
+
   const totalTests = passed + failed + skipped;
   const status = computeStatus(passed, failed, skipped);
+  const totalDurationMs = _timeline.reduce((s, t) => s + t.durationMs, 0);
 
   // Write artifacts
   const outputPath = path.join(tsprDir, 'test_results.json');
   const reportPath = path.join(tsprDir, 'report.html');
+
+  // Build the human-readable summary for cc to relay verbatim
+  const htmlRunId = crypto.randomUUID();
+  const summary = buildSummary(
+    projectName,
+    totalTests,
+    passed,
+    failed,
+    skipped,
+    failures,
+    warnings,
+    modelUsed,
+    totalDurationMs,
+    htmlRunId,
+    reportPath,
+  );
+
+  // ── Step: write-artifacts ─────────────────────────────────────────────────
+  const writeStart = Date.now();
 
   const resultData: ExecuteResult = {
     status,
@@ -357,6 +528,8 @@ Return ONLY the TypeScript code, no markdown fences.`;
     skipped,
     warnings,
     failures,
+    summary,
+    _timeline,
   };
 
   try {
@@ -370,14 +543,13 @@ Return ONLY the TypeScript code, no markdown fences.`;
   }
 
   // Write HTML report via pretty renderer
-  const htmlRunId = crypto.randomUUID();
   const reportHtml = renderHtmlReport({
     runId: htmlRunId,
     projectName,
     startedAt: new Date(),
-    durationMs: 0,
+    durationMs: totalDurationMs,
     provider: 'unknown',
-    modelId: ctx.config.model ?? 'unknown',
+    modelId: modelUsed,
     costUsd: 0,
     totalTests,
     passed,
@@ -405,6 +577,12 @@ Return ONLY the TypeScript code, no markdown fences.`;
     );
   }
 
+  _timeline.push({
+    step: 'write-artifacts',
+    start: writeStart,
+    durationMs: Date.now() - writeStart,
+  });
+
   // Insert test_results rows into SQLite
   for (const scenario of allScenarios) {
     try {
@@ -415,6 +593,9 @@ Return ONLY the TypeScript code, no markdown fences.`;
       ).run(0, scenario.id, scenario.title ?? scenario.id, testOutcome, isFailure?.stack ?? null);
     } catch { /* ignore */ }
   }
+
+  // Update _timeline in the resultData (was built before write-artifacts step)
+  resultData._timeline = _timeline;
 
   return resultData;
 }
@@ -449,7 +630,14 @@ async function generateAndExecuteHandler(args: unknown, ctx: ServerContext): Pro
         .run(outcome, endedAt, durationMs, runId);
     } catch { /* ignore */ }
 
-    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    // Return summary as the primary text content so cc can relay it verbatim.
+    // Also include the full JSON as a second content block for programmatic use.
+    return {
+      content: [
+        { type: 'text', text: result.summary },
+        { type: 'text', text: JSON.stringify(result) },
+      ],
+    };
   } catch (err) {
     outcome = 'error';
     if (err instanceof McpError) {

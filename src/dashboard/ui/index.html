@@ -30,38 +30,13 @@
     <div class="stat-tile"><div class="stat-tile__num" id="stat-projects">—</div><div class="stat-tile__label">Projects</div></div>
   </div>
 
-  <!-- Trend strip -->
-  <div class="trend-strip" id="trend-strip">
-    <span class="trend-strip__label">30-day trend</span>
-    <span class="trend-strip__arrow flat" id="trend-arrow">— no data</span>
-    <div class="trend-strip__spark" id="trend-sparkline"></div>
-  </div>
+  <!-- Primary layout: issues main + projects sidebar -->
+  <div class="home-layout">
 
-  <!-- Two-column: projects left, issues right -->
-  <div class="two-col">
-
-    <!-- Left: Projects -->
-    <div>
+    <!-- Main: Issue triage (primary area) -->
+    <div class="home-layout__main">
       <div class="section-header">
-        Projects <span class="section-header__count" id="projects-count">0</span>
-      </div>
-      <div class="project-list" id="project-list">
-        <div class="empty-state">
-          <div class="empty-state__heading">No runs yet</div>
-          <div class="empty-state__desc">tspr hasn't run yet. Get started:</div>
-          <pre class="empty-state__code">// In Claude Code, register the MCP server:
-tspr mcp
-
-// Then call from cc:
-tspr_bootstrap_tests({ projectPath: "./your-project" })</pre>
-        </div>
-      </div>
-    </div>
-
-    <!-- Right: Top issues -->
-    <div>
-      <div class="section-header">
-        Top Issues <span class="section-header__count" id="issues-count">0</span>
+        Active Issues <span class="section-header__count" id="issues-count">0</span>
       </div>
       <div class="issues-list" id="issues-list">
         <div class="empty-state">
@@ -70,6 +45,21 @@ tspr_bootstrap_tests({ projectPath: "./your-project" })</pre>
         </div>
       </div>
     </div>
+
+    <!-- Sidebar: Projects (narrower) -->
+    <div class="home-layout__sidebar">
+      <div class="section-header">
+        Projects <span class="section-header__count" id="projects-count">0</span>
+      </div>
+      <div class="project-list" id="project-list">
+        <div class="empty-state empty-state--compact">
+          <div class="empty-state__heading">No runs yet</div>
+          <div class="empty-state__desc">tspr hasn't run yet.</div>
+          <pre class="empty-state__code">tspr mcp</pre>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Run history (collapsed by default) -->
@@ -112,5 +102,9 @@ tspr_bootstrap_tests({ projectPath: "./your-project" })</pre>
 </aside>
 
 <script src="/app.js"></script>
+
+<!-- Apply-fix feedback toast -->
+<div id="fix-toast" class="fix-toast" style="display:none"></div>
+
 </body>
 </html>

@@ -32,7 +32,13 @@
     data-run="{{RUN_JSON}}"
     data-results="{{TEST_RESULTS_JSON}}">
   </div>
+
+  <!-- Transparency panel — populated by app.js from test_results.json _timeline -->
+  <div id="transparency-panel" style="margin-top:2rem"></div>
 </main>
+
+<!-- Apply-fix feedback toast -->
+<div id="fix-toast" class="fix-toast" style="display:none"></div>
 
 <!-- Side panel for test detail + code viewer -->
 <div class="side-panel__overlay" id="panel-overlay"></div>

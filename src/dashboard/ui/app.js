@@ -244,6 +244,57 @@ function wirePanel() {
 
 // ── Issue card rendering ───────────────────────────────────────────────────────
 
+// ── Apply-fix toast ────────────────────────────────────────────────────────────
+
+var toastTimer = null;
+function showToast(msg, ok) {
+  var el = document.getElementById('fix-toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'fix-toast ' + (ok ? 'fix-toast--ok' : 'fix-toast--err');
+  el.style.display = 'block';
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { el.style.display = 'none'; }, 5000);
+}
+
+function postJson(url, data) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; }); });
+}
+
+function applyFix(issue, btn, onDone) {
+  if (!issue.projectPath) { showToast('No projectPath on issue — cannot apply fix.', false); return; }
+  if (!issue.issueId) { showToast('No issueId on issue — old fixture data? Re-run tspr.', false); return; }
+  btn.classList.add('btn--loading');
+  btn.textContent = 'Applying…';
+  postJson('/api/apply-fix', {
+    issueId: issue.issueId,
+    projectPath: issue.projectPath,
+    commit: true,
+  }).then(function (r) {
+    btn.classList.remove('btn--loading');
+    if (r.ok && r.body.applied) {
+      showToast('✓ Fix applied! Branch: ' + r.body.branch + (r.body.commitSha ? ' (' + r.body.commitSha.slice(0, 8) + ')' : ''), true);
+      btn.textContent = '✓ Applied';
+      btn.disabled = true;
+      // Show push-pr + merge-local buttons
+      if (onDone) onDone(r.body);
+    } else {
+      showToast('Apply fix: ' + (r.body.error || r.body.message || 'unknown error'), false);
+      btn.textContent = 'Apply Fix';
+    }
+  }).catch(function (e) {
+    btn.classList.remove('btn--loading');
+    btn.textContent = 'Apply Fix';
+    showToast('Network error: ' + e.message, false);
+  });
+}
+
+// ── Issue card rendering ───────────────────────────────────────────────────────
+
 function buildIssueCard(issue, idx) {
   var fixRegion = issue.suggestedFixRegion;
   var fileLabel = fixRegion ? fixRegion.file : null;
@@ -291,9 +342,12 @@ function buildIssueCard(issue, idx) {
     html += renderPatch(issue.suggestedPatch);
   }
 
-  html += '<div class="issue-card__actions">';
-  if (issue.suggestedPatch) {
-    html += '<button class="btn btn--accent" data-copy-patch="' + idx + '">Copy patch</button>';
+  html += '<div class="issue-card__actions" id="issue-actions-' + idx + '">';
+  if (issue.hasPatch || issue.suggestedPatch) {
+    // Primary: Apply Fix (replaces old Copy patch)
+    html += '<button class="btn btn--apply-fix" data-apply-fix="' + idx + '">Apply Fix</button>';
+    // Secondary: View Diff (replaces nothing — new)
+    html += '<button class="btn btn--view-diff" data-copy-patch="' + idx + '">View Diff</button>';
   }
   if (vsLink) {
     html += '<a class="btn" href="' + escHtml(vsLink) + '">Open in editor ↗</a>';
@@ -307,6 +361,186 @@ function buildIssueCard(issue, idx) {
   html += '</div>'; // body
   html += '</div>'; // card
   return html;
+}
+
+// ── Transparency panel (run detail) ───────────────────────────────────────────
+
+function renderTransparencyPanel(container, testResultsJson) {
+  if (!testResultsJson) return;
+  var data = null;
+  try { data = JSON.parse(testResultsJson); } catch (_) { return; }
+  if (!data || !data._timeline || !data._timeline.length) return;
+
+  var timeline = data._timeline;
+  var totalMs = timeline.reduce(function (s, t) { return s + (t.durationMs || 0); }, 0);
+
+  // Timeline bar
+  var barHtml = '<div class="timeline-bar">';
+  var legendHtml = '<div class="timeline-legend">';
+  var stepColors = {
+    'plan-load': '#6366f1',
+    'cc-generate': '#8b5cf6',
+    'sandbox-exec': '#f59e0b',
+    'parse-results': '#10b981',
+    'write-artifacts': '#3b82f6',
+  };
+  timeline.forEach(function (step) {
+    var pct = totalMs > 0 ? ((step.durationMs / totalMs) * 100).toFixed(1) : 0;
+    var label = step.durationMs >= 1000
+      ? (step.durationMs / 1000).toFixed(1) + 's'
+      : step.durationMs + 'ms';
+    barHtml += '<div class="timeline-segment" data-step="' + escHtml(step.step) + '" ' +
+      'style="width:' + pct + '%" title="' + escHtml(step.step) + ': ' + label + '">' +
+      (parseFloat(String(pct)) > 10 ? escHtml(step.step.replace(/-/g, ' ')) : '') +
+      '</div>';
+    var color = stepColors[step.step] || 'var(--accent)';
+    legendHtml += '<div class="timeline-legend__item">' +
+      '<div class="timeline-legend__dot" style="background:' + color + '"></div>' +
+      escHtml(step.step) + ' · ' + escHtml(label) +
+      '</div>';
+  });
+  barHtml += '</div>';
+  legendHtml += '</div>';
+
+  // LLM trace table (only steps with modelUsed)
+  var llmSteps = timeline.filter(function (s) { return s.modelUsed; });
+  var traceHtml = '';
+  if (llmSteps.length > 0) {
+    traceHtml = '<table class="llm-trace-table"><thead><tr>' +
+      '<th>Step</th><th>Model</th><th>Prompt chars</th><th>Response chars</th><th>Duration</th><th>Cost USD</th>' +
+      '</tr></thead><tbody>';
+    llmSteps.forEach(function (s) {
+      traceHtml += '<tr>' +
+        '<td>' + escHtml(s.step) + '</td>' +
+        '<td>' + escHtml(s.modelUsed || '—') + '</td>' +
+        '<td>' + (s.promptChars != null ? s.promptChars.toLocaleString() : '—') + '</td>' +
+        '<td>' + (s.responseChars != null ? s.responseChars.toLocaleString() : '—') + '</td>' +
+        '<td>' + formatMs(s.durationMs) + '</td>' +
+        '<td>' + (s.costUsd != null ? '$' + s.costUsd.toFixed(4) : '—') + '</td>' +
+        '</tr>';
+    });
+    traceHtml += '</tbody></table>';
+  }
+
+  // Truncation events
+  var truncHtml = '';
+  if (data.warnings && data.warnings.length > 0) {
+    truncHtml = '<ul style="list-style:none;display:flex;flex-direction:column;gap:0.3rem">';
+    data.warnings.forEach(function (w) {
+      truncHtml += '<li class="warning-item">⚠️ ' + escHtml(w) + '</li>';
+    });
+    truncHtml += '</ul>';
+  } else {
+    truncHtml = '<div style="font-size:0.78rem;color:var(--text-dim)">No truncation events.</div>';
+  }
+
+  // Raw LLM output (from cc-generate step, just show responsChars note)
+  var rawSection = '<button class="raw-llm-toggle" id="raw-llm-btn">▶ Show raw LLM output (test code)</button>' +
+    '<div id="raw-llm-div" class="raw-llm-output" style="display:none">';
+  if (data.failures && data.failures.length > 0) {
+    // Best we can do without storing raw output: show the stacks
+    data.failures.forEach(function (f, i) {
+      rawSection += '# Failure ' + (i + 1) + ': ' + escHtml(f.title || f.testId) + '\n';
+      rawSection += (f.stack ? escHtml(f.stack.slice(0, 1500)) : '') + '\n\n';
+    });
+  } else {
+    rawSection += 'No failures. Raw LLM code was not stored (add _rawGeneratedCode to test_results.json for full trace).';
+  }
+  rawSection += '</div>';
+
+  var panelHtml = '<div class="transparency-panel" id="transparency-panel-el">' +
+    '<div class="transparency-panel__toggle" id="tp-toggle">' +
+    '🔍 Process Transparency' +
+    '<span class="transparency-panel__caret" id="tp-caret">▼</span>' +
+    '</div>' +
+    '<div class="transparency-panel__body">' +
+    '<div class="tp-section"><div class="tp-section__title">Process Timeline</div>' +
+    barHtml + legendHtml + '</div>' +
+    (traceHtml ? '<div class="tp-section"><div class="tp-section__title">LLM Trace</div>' + traceHtml + '</div>' : '') +
+    '<div class="tp-section"><div class="tp-section__title">Truncation Events</div>' + truncHtml + '</div>' +
+    '<div class="tp-section"><div class="tp-section__title">Raw LLM Output</div>' + rawSection + '</div>' +
+    '</div>' +
+    '</div>';
+
+  container.innerHTML = panelHtml;
+
+  var toggle = document.getElementById('tp-toggle');
+  var panel = document.getElementById('transparency-panel-el');
+  if (toggle && panel) {
+    toggle.addEventListener('click', function () {
+      panel.classList.toggle('open');
+    });
+  }
+  var rawBtn = document.getElementById('raw-llm-btn');
+  var rawDiv = document.getElementById('raw-llm-div');
+  if (rawBtn && rawDiv) {
+    rawBtn.addEventListener('click', function () {
+      var shown = rawDiv.style.display !== 'none';
+      rawDiv.style.display = shown ? 'none' : 'block';
+      rawBtn.textContent = (shown ? '▶' : '▼') + ' Show raw LLM output (test code)';
+    });
+  }
+}
+
+// ── Wire Push PR + Merge Local post-apply buttons ─────────────────────────────
+
+function wirePostActionBtns(actionsEl, issue) {
+  actionsEl.querySelectorAll('[data-push-pr]').forEach(function (btn) {
+    if (btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var branch = btn.getAttribute('data-branch');
+      if (!branch || !issue.projectPath) { showToast('No branch/projectPath', false); return; }
+      btn.textContent = 'Pushing…';
+      btn.classList.add('btn--loading');
+      postJson('/api/push-pr', { branch: branch, projectPath: issue.projectPath }).then(function (r) {
+        btn.classList.remove('btn--loading');
+        if (r.body.gh_missing) {
+          showToast('gh CLI not found. Install GitHub CLI to push PRs.', false);
+          btn.textContent = 'Push PR';
+        } else if (r.ok && r.body.prUrl) {
+          showToast('✓ PR created: ' + r.body.prUrl, true);
+          btn.textContent = '✓ PR created';
+          btn.disabled = true;
+        } else {
+          showToast('Push PR error: ' + (r.body.error || 'unknown'), false);
+          btn.textContent = 'Push PR';
+        }
+      }).catch(function (e) {
+        btn.classList.remove('btn--loading');
+        btn.textContent = 'Push PR';
+        showToast('Network error: ' + e.message, false);
+      });
+    });
+  });
+
+  actionsEl.querySelectorAll('[data-merge-local]').forEach(function (btn) {
+    if (btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var branch = btn.getAttribute('data-branch');
+      if (!branch || !issue.projectPath) { showToast('No branch/projectPath', false); return; }
+      btn.textContent = 'Merging…';
+      btn.classList.add('btn--loading');
+      postJson('/api/merge-local', { branch: branch, projectPath: issue.projectPath }).then(function (r) {
+        btn.classList.remove('btn--loading');
+        if (r.ok && r.body.merged) {
+          showToast('✓ Merged ' + branch + ' into ' + (r.body.base || 'main'), true);
+          btn.textContent = '✓ Merged';
+          btn.disabled = true;
+        } else {
+          showToast('Merge error: ' + (r.body.error || 'unknown'), false);
+          btn.textContent = 'Merge Local';
+        }
+      }).catch(function (e) {
+        btn.classList.remove('btn--loading');
+        btn.textContent = 'Merge Local';
+        showToast('Network error: ' + e.message, false);
+      });
+    });
+  });
 }
 
 // ── Home page ──────────────────────────────────────────────────────────────────
@@ -342,7 +576,7 @@ function buildIssueCard(issue, idx) {
       if (el3) el3.textContent = pct(stats.avgPassRate);
     }).catch(function () {});
 
-    // Projects
+    // Projects (sidebar)
     fetch('/api/projects').then(function (r) { return r.json(); }).then(function (projects) {
       var countEl = document.getElementById('projects-count');
       var statsEl = document.getElementById('stat-projects');
@@ -350,10 +584,10 @@ function buildIssueCard(issue, idx) {
       if (statsEl) statsEl.textContent = projects.length;
 
       if (projects.length === 0) {
-        projectList.innerHTML = '<div class="empty-state">' +
+        projectList.innerHTML = '<div class="empty-state empty-state--compact">' +
           '<div class="empty-state__heading">No runs yet</div>' +
-          '<div class="empty-state__desc">tspr hasn\'t run yet. Get started:</div>' +
-          '<pre class="empty-state__code">// In Claude Code, register the MCP server:\ntspr mcp\n\n// Then call from cc:\ntspr_bootstrap_tests({ projectPath: "./your-project" })</pre>' +
+          '<div class="empty-state__desc">tspr hasn\'t run yet.</div>' +
+          '<pre class="empty-state__code">tspr mcp</pre>' +
           '</div>';
         return;
       }
@@ -394,19 +628,13 @@ function buildIssueCard(issue, idx) {
         });
       });
     }).catch(function () {
-      projectList.innerHTML = '<div class="empty-state"><div class="empty-state__heading">Failed to load projects</div></div>';
+      projectList.innerHTML = '<div class="empty-state empty-state--compact"><div class="empty-state__heading">Failed to load projects</div></div>';
     });
 
-    // Issues
-    fetch('/api/issues?limit=5').then(function (r) { return r.json(); }).then(function (issues) {
+    // Issues (primary — show up to 20)
+    fetch('/api/issues?limit=20').then(function (r) { return r.json(); }).then(function (issues) {
       issuesData = issues;
       renderIssuesList(issues);
-    }).catch(function () {});
-
-    // Trends
-    fetch('/api/trends?days=30').then(function (r) { return r.json(); }).then(function (trends) {
-      var sparkline = document.getElementById('trend-sparkline');
-      if (sparkline) renderSparkline(sparkline, trends);
     }).catch(function () {});
 
     // Runs history
@@ -443,6 +671,28 @@ function buildIssueCard(issue, idx) {
       });
     });
 
+    // [Apply Fix] — primary action
+    listEl.querySelectorAll('[data-apply-fix]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var idx = parseInt(btn.getAttribute('data-apply-fix'), 10);
+        var issue = visible[idx];
+        if (!issue) return;
+        applyFix(issue, btn, function (result) {
+          // After apply, show push-pr + merge-local in the actions row
+          var actionsEl = document.getElementById('issue-actions-' + idx);
+          if (actionsEl) {
+            actionsEl.insertAdjacentHTML('beforeend',
+              '<button class="btn btn--push-pr" data-push-pr="' + idx + '" data-branch="' + escHtml(result.branch || '') + '">Push PR</button>' +
+              '<button class="btn btn--merge-local" data-merge-local="' + idx + '" data-branch="' + escHtml(result.branch || '') + '">Merge Local</button>'
+            );
+            wirePostActionBtns(actionsEl, issue);
+          }
+        });
+      });
+    });
+
+    // [View Diff] — secondary (was Copy patch)
     listEl.querySelectorAll('[data-copy-patch]').forEach(function (btn) {
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
@@ -647,6 +897,20 @@ function buildIssueCard(issue, idx) {
   container.innerHTML = html;
   runRoot.appendChild(container);
 
+  // Render transparency panel from test_results.json _timeline
+  // Try to load the test_results.json for this run from the project path
+  var tpContainer = document.getElementById('transparency-panel');
+  if (tpContainer && run.projectPath) {
+    var tsprDir = (run.projectPath.replace(/\\/g, '/')) + '/.tspr/test_results.json';
+    fetch('/api/file?path=' + encodeURIComponent(tsprDir))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && data.content) {
+          renderTransparencyPanel(tpContainer, data.content);
+        }
+      }).catch(function () { /* no transparency data available */ });
+  }
+
   container.querySelectorAll('.test-row').forEach(function (row) {
     row.addEventListener('click', function () {
       var idx = parseInt(row.getAttribute('data-result-idx'), 10);
@@ -682,11 +946,14 @@ function buildIssueCard(issue, idx) {
       bodyHtml += '<div class="section-title">Suggested patch</div>';
       bodyHtml += renderPatch(result.suggestedPatch);
       bodyHtml += '<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap">';
-      bodyHtml += '<button class="btn btn--accent" id="run-copy-patch-btn">Copy patch</button>';
-      bodyHtml += '<button class="btn" id="run-apply-btn">How to apply…</button>';
+      if (result.issueId && run.projectPath) {
+        bodyHtml += '<button class="btn btn--apply-fix" id="run-apply-fix-btn" data-issue-id="' + escHtml(result.issueId || '') + '">Apply Fix</button>';
+      }
+      bodyHtml += '<button class="btn btn--view-diff" id="run-copy-patch-btn">View Diff / Copy</button>';
+      bodyHtml += '<button class="btn" id="run-apply-btn">CLI hint…</button>';
       bodyHtml += '</div>';
       bodyHtml += '<div id="run-apply-div" style="display:none;margin-top:0.5rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.65rem;font-family:var(--font-mono);font-size:0.72rem;color:var(--text)">';
-      bodyHtml += '# Save the patch text to a file, then:\ngit apply the.patch\n# or:\npatch -p1 &lt; the.patch';
+      bodyHtml += 'tspr apply-fix ' + escHtml(result.issueId || '&lt;issueId&gt;') + '\n# or git apply:\ngit apply the.patch';
       bodyHtml += '</div>';
     }
 
@@ -741,6 +1008,26 @@ function buildIssueCard(issue, idx) {
       if (applyBtn && applyDiv) {
         applyBtn.addEventListener('click', function () {
           applyDiv.style.display = applyDiv.style.display === 'none' ? 'block' : 'none';
+        });
+      }
+      // [Apply Fix] button in run detail panel
+      var applyFixBtn = document.getElementById('run-apply-fix-btn');
+      if (applyFixBtn && run.projectPath) {
+        applyFixBtn.addEventListener('click', function () {
+          var fakeIssue = {
+            issueId: applyFixBtn.getAttribute('data-issue-id') || result.issueId,
+            projectPath: run.projectPath,
+            suggestedPatch: result.suggestedPatch,
+            testId: result.testId,
+            title: result.testName || result.testId,
+          };
+          applyFix(fakeIssue, applyFixBtn, function (res) {
+            applyFixBtn.insertAdjacentHTML('afterend',
+              ' <button class="btn btn--push-pr" data-push-pr="rp" data-branch="' + escHtml(res.branch || '') + '">Push PR</button>' +
+              ' <button class="btn btn--merge-local" data-merge-local="rp" data-branch="' + escHtml(res.branch || '') + '">Merge Local</button>'
+            );
+            wirePostActionBtns(applyFixBtn.parentElement, fakeIssue);
+          });
         });
       }
     }, 50);
