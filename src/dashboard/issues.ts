@@ -7,10 +7,27 @@
  * frequency, and recency.
  */
 
+import { createHash } from 'node:crypto';
+
+// ─── Stable issue ID ─────────────────────────────────────────────────────────
+
+/**
+ * Compute a stable 16-char hex issue ID from testId + projectPath.
+ * Stable: same inputs → same output across runs and restarts.
+ */
+export function computeStableIssueId(testId: string, projectPath: string): string {
+  return createHash('sha256')
+    .update(testId + '\x00' + (projectPath ?? ''))
+    .digest('hex')
+    .slice(0, 16);
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface IssueEntry {
   testId: string;
+  /** Stable 16-char hex hash of testId + projectPath. Usable as tspr apply-fix <issueId> */
+  issueId: string;
   title: string;
   projectPath: string | null;
   /** Number of consecutive runs this test has been failing */
@@ -25,7 +42,12 @@ export interface IssueEntry {
   suggestedPatch: string | null;
   /** run_id of the most recent run that had this failure */
   lastRunId: string;
+  /** Whether a suggestedPatch is available (for UI show/hide) */
+  hasPatch: boolean;
 }
+
+/** Extended IssueEntry exported for apply-fix CLI. Includes all fields. */
+export type FixedIssueEntry = IssueEntry;
 
 export interface SuggestedFixRegion {
   file: string;
@@ -129,8 +151,10 @@ export function aggregateTopIssues(
       }
     }
 
+    const issueId = computeStableIssueId(issue.testId, issue.projectPath ?? '');
     entries.push({
       testId: issue.testId,
+      issueId,
       title: issue.title,
       projectPath: issue.projectPath,
       consecutiveFailures: Math.max(consecutive, 1),
@@ -138,6 +162,7 @@ export function aggregateTopIssues(
       stack: issue.stack,
       suggestedFixRegion: issue.suggestedFixRegion,
       suggestedPatch: issue.suggestedPatch,
+      hasPatch: issue.suggestedPatch != null,
       lastRunId: issue.lastRunId,
     });
   }

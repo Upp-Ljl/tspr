@@ -31,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { aggregateTopIssues } from './issues.js';
 import { compareRuns } from './compare.js';
+import { applyPatch, pushPr, mergeLocal, GitOpsError } from '../git-ops/index.js';
 
 // ─── public interface ─────────────────────────────────────────────────────────
 
@@ -473,6 +474,201 @@ function sendNotFound(res: http.ServerResponse, msg = 'Not found'): void {
   sendJson(res, 404, { error: msg });
 }
 
+// ─── POST route handler ───────────────────────────────────────────────────────
+
+function handlePost(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  urlPath: string,
+  db: DbHandle,
+  extraAllowedPaths: string[],
+  readBody: (req: http.IncomingMessage) => Promise<string>,
+): void {
+  // All POST routes are async — wrap errors
+  const run = async () => {
+    let bodyStr = '';
+    try { bodyStr = await readBody(req); } catch {
+      sendJson(res, 400, { error: 'Failed to read request body' });
+      return;
+    }
+
+    let body: Record<string, unknown> = {};
+    try { body = JSON.parse(bodyStr) as Record<string, unknown>; } catch {
+      sendJson(res, 400, { error: 'Request body must be valid JSON' });
+      return;
+    }
+
+    // ── POST /api/apply-fix ────────────────────────────────────────────────
+    if (urlPath === '/api/apply-fix') {
+      const issueId = String(body.issueId ?? '');
+      const projectPath = String(body.projectPath ?? '');
+      const branch = body.branch ? String(body.branch) : undefined;
+      const commit = body.commit !== false; // default true
+      const dryRun = body.dryRun === true;
+
+      if (!issueId || !projectPath) {
+        sendJson(res, 400, { error: 'issueId and projectPath are required' });
+        return;
+      }
+
+      // Validate path is in allowlist
+      const projectPaths = db.getProjectPaths();
+      const allowlist = buildAllowlist(projectPaths, extraAllowedPaths);
+      if (!isPathAllowed(projectPath, allowlist)) {
+        sendJson(res, 403, { error: 'projectPath is outside allowed directories' });
+        return;
+      }
+
+      // Load test_results.json from project
+      const tsprDir = path.join(projectPath, '.tspr');
+      const resultsPath = path.join(tsprDir, 'test_results.json');
+      if (!fs.existsSync(resultsPath)) {
+        sendJson(res, 404, { error: 'No test_results.json found for project' });
+        return;
+      }
+
+      let stored: { failures?: Array<{
+        testId: string; title?: string; stack?: string; issueId?: string;
+        suggestedPatch?: string;
+        suggestedFixRegion?: { file: string; lineStart: number; lineEnd: number; why: string };
+      }> };
+      try {
+        stored = JSON.parse(fs.readFileSync(resultsPath, 'utf-8')) as typeof stored;
+      } catch {
+        sendJson(res, 500, { error: 'Failed to parse test_results.json' });
+        return;
+      }
+
+      const { computeStableIssueId } = await import('./issues.js');
+      const failure = (stored.failures ?? []).find((f) => {
+        const computedId = computeStableIssueId(f.testId, projectPath);
+        return (
+          f.issueId === issueId ||
+          computedId === issueId ||
+          computedId.startsWith(issueId) ||
+          issueId.startsWith(computedId.slice(0, issueId.length))
+        );
+      });
+
+      if (!failure) {
+        sendJson(res, 404, { error: `Issue ${issueId} not found in test_results.json` });
+        return;
+      }
+
+      if (!failure.suggestedPatch) {
+        const fix = failure.suggestedFixRegion;
+        sendJson(res, 200, {
+          applied: false,
+          message: fix
+            ? `No auto-fix patch available. Look at: ${fix.file}:${fix.lineStart}–${fix.lineEnd} — ${fix.why}`
+            : 'No auto-fix patch available.',
+          files: [],
+          branch: '',
+        });
+        return;
+      }
+
+      try {
+        const result = await applyPatch({
+          projectPath,
+          patch: failure.suggestedPatch,
+          issueId,
+          testTitle: failure.title ?? failure.testId,
+          branch,
+          noCommit: !commit,
+          opts: { dryRun },
+        });
+        sendJson(res, 200, {
+          applied: result.applied,
+          branch: result.branch,
+          commitSha: result.commitSha,
+          files: result.files,
+          message: result.message,
+          dryRun: result.dryRun,
+        });
+      } catch (err) {
+        if (err instanceof GitOpsError) {
+          sendJson(res, 422, { error: err.message, code: err.code });
+        } else {
+          sendJson(res, 500, { error: String(err) });
+        }
+      }
+      return;
+    }
+
+    // ── POST /api/push-pr ──────────────────────────────────────────────────
+    if (urlPath === '/api/push-pr') {
+      const branchParam = String(body.branch ?? '');
+      const base = String(body.base ?? 'main');
+      const title = body.title ? String(body.title) : undefined;
+      const projectPath = String(body.projectPath ?? '');
+      const dryRun = body.dryRun === true;
+
+      if (!branchParam || !projectPath) {
+        sendJson(res, 400, { error: 'branch and projectPath are required' });
+        return;
+      }
+
+      const projectPaths = db.getProjectPaths();
+      const allowlist = buildAllowlist(projectPaths, extraAllowedPaths);
+      if (!isPathAllowed(projectPath, allowlist)) {
+        sendJson(res, 403, { error: 'projectPath is outside allowed directories' });
+        return;
+      }
+
+      try {
+        const result = await pushPr({ projectPath, branch: branchParam, base, title, opts: { dryRun } });
+        sendJson(res, 200, result);
+      } catch (err) {
+        if (err instanceof GitOpsError) {
+          sendJson(res, 422, { error: err.message, code: err.code });
+        } else {
+          sendJson(res, 500, { error: String(err) });
+        }
+      }
+      return;
+    }
+
+    // ── POST /api/merge-local ──────────────────────────────────────────────
+    if (urlPath === '/api/merge-local') {
+      const branchParam = String(body.branch ?? '');
+      const base = String(body.base ?? 'main');
+      const projectPath = String(body.projectPath ?? '');
+      const dryRun = body.dryRun === true;
+
+      if (!branchParam || !projectPath) {
+        sendJson(res, 400, { error: 'branch and projectPath are required' });
+        return;
+      }
+
+      const projectPaths = db.getProjectPaths();
+      const allowlist = buildAllowlist(projectPaths, extraAllowedPaths);
+      if (!isPathAllowed(projectPath, allowlist)) {
+        sendJson(res, 403, { error: 'projectPath is outside allowed directories' });
+        return;
+      }
+
+      try {
+        const result = await mergeLocal({ projectPath, branch: branchParam, base, opts: { dryRun } });
+        sendJson(res, 200, result);
+      } catch (err) {
+        if (err instanceof GitOpsError) {
+          sendJson(res, 422, { error: err.message, code: err.code });
+        } else {
+          sendJson(res, 500, { error: String(err) });
+        }
+      }
+      return;
+    }
+
+    sendJson(res, 404, { error: 'POST route not found' });
+  };
+
+  run().catch((err) => {
+    try { sendJson(res, 500, { error: String(err) }); } catch { /* ignore */ }
+  });
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 function makeHandler(
@@ -485,11 +681,29 @@ function makeHandler(
   costTemplate: string,
   extraAllowedPaths: string[],
 ) {
+  // ── Body reader ───────────────────────────────────────────────────────────
+
+  function readBody(req: http.IncomingMessage): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let body = '';
+      req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      req.on('end', () => resolve(body));
+      req.on('error', reject);
+      req.setTimeout(5000, () => reject(new Error('body read timeout')));
+    });
+  }
+
   return function handler(req: http.IncomingMessage, res: http.ServerResponse): void {
     const rawUrl = req.url ?? '/';
     const [urlPath, queryString] = rawUrl.split('?');
     const params = new URLSearchParams(queryString ?? '');
     const method = req.method ?? 'GET';
+
+    // ── POST routes (new: local-advantage) ────────────────────────────────
+    if (method === 'POST') {
+      handlePost(req, res, urlPath, db, extraAllowedPaths, readBody);
+      return;
+    }
 
     if (method !== 'GET' && method !== 'HEAD') {
       sendJson(res, 405, { error: 'Method not allowed' });
