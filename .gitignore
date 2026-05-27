@@ -11,6 +11,10 @@ dist/
 coverage/
 test-results/
 playwright-report/
+# Tspr-emitted artifacts (regenerated per run; never commit)
+**/.tspr/
+!docs/details/**/.tspr/
+
 .vscode/
 .idea/
 *.tmp
