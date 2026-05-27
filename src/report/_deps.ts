@@ -4,7 +4,7 @@
  * DO NOT add implementations here.
  */
 
-export interface CcClient {
+export interface LlmClient {
   run(opts: { prompt: string; timeout?: number }): Promise<{ stdout: string; costUsd: number }>;
 }
 

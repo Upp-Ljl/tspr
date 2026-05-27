@@ -116,7 +116,7 @@ describe('tspr_rerun_tests', () => {
   // ─── B-8-3: success returns same shape as generate_code_and_execute ────────
   it('RERUN-003 (mock): success returns same response shape as generate_code_and_execute', async () => {
     const p = makeProjectWithPriorRun();
-    const ctx = makeContext({ ccClient: makeMockCcClient('// tests') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('// tests') });
 
     const result = await rerunTestsTool.handler({ projectPath: p.projectPath }, ctx);
     const parsed = JSON.parse(result.content[0].text) as Record<string, unknown>;
@@ -147,7 +147,7 @@ describe('tspr_rerun_tests', () => {
     // Wait 1s to ensure mtime difference
     await new Promise((r) => setTimeout(r, 1100));
 
-    const ctx = makeContext({ ccClient: makeMockCcClient('// tests') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('// tests') });
     await rerunTestsTool.handler({ projectPath: p.projectPath }, ctx);
 
     const statAfter = fs.statSync(testResultsPath);

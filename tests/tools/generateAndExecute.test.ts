@@ -96,7 +96,7 @@ describe('tspr_generate_code_and_execute', () => {
   // ─── B-6-1: no test plan → ERR_NO_TEST_PLAN ───────────────────────────────
   it('EXECUTE-001: no test plan returns ERR_NO_TEST_PLAN', async () => {
     const p = mkProject();
-    const ctx = makeContext({ ccClient: makeMockCcClient('// test code') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('// test code') });
     try {
       await generateAndExecuteTool.handler(
         { projectName: 'test-proj', projectPath: p.projectPath, testIds: [], additionalInstruction: '' },
@@ -115,7 +115,7 @@ describe('tspr_generate_code_and_execute', () => {
     const p = makeProjectWithPlan([{ id: 'T-1' }]);
     mkProjectTrack(p);
     const ctx = makeContext({
-      ccClient: makeMockCcClient('// test code'),
+      llmClient: makeMockCcClient('// test code'),
       docker: makeMockDockerManager(true),
     });
     try {
@@ -134,7 +134,7 @@ describe('tspr_generate_code_and_execute', () => {
   it('EXECUTE-003: totalTests = passed + failed + skipped', async () => {
     const p = makeProjectWithPlan([{ id: 'T-1' }, { id: 'T-2' }, { id: 'T-3' }]);
     mkProjectTrack(p);
-    const ctx = makeContext({ ccClient: makeMockCcClient('// generated tests') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('// generated tests') });
     const result = await runExecute(
       { projectName: 'test', projectPath: p.projectPath, testIds: [], additionalInstruction: '' },
       ctx,
@@ -148,7 +148,7 @@ describe('tspr_generate_code_and_execute', () => {
   it('EXECUTE-004/ARTIFACT-005: outputPath points to existing test_results.json', async () => {
     const p = makeProjectWithPlan([{ id: 'T-1' }]);
     mkProjectTrack(p);
-    const ctx = makeContext({ ccClient: makeMockCcClient('// tests') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('// tests') });
     const result = await runExecute(
       { projectName: 'test', projectPath: p.projectPath, testIds: [], additionalInstruction: '' },
       ctx,
@@ -165,7 +165,7 @@ describe('tspr_generate_code_and_execute', () => {
   it('EXECUTE-005/ARTIFACT-006: reportPath points to existing non-empty report.html', async () => {
     const p = makeProjectWithPlan([{ id: 'T-1' }]);
     mkProjectTrack(p);
-    const ctx = makeContext({ ccClient: makeMockCcClient('// tests') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('// tests') });
     const result = await runExecute(
       { projectName: 'test', projectPath: p.projectPath, testIds: [], additionalInstruction: '' },
       ctx,
@@ -181,7 +181,7 @@ describe('tspr_generate_code_and_execute', () => {
   it('EXECUTE-006: all-pass returns status=ok and failures=[]', async () => {
     const p = makeProjectWithPlan([{ id: 'T-1' }, { id: 'T-2' }]);
     mkProjectTrack(p);
-    const ctx = makeContext({ ccClient: makeMockCcClient('// tests') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('// tests') });
     const result = await runExecute(
       { projectName: 'test', projectPath: p.projectPath, testIds: [], additionalInstruction: '' },
       ctx,
@@ -197,7 +197,7 @@ describe('tspr_generate_code_and_execute', () => {
   it('EXECUTE-007: failing test populates failures array with required fields', async () => {
     const p = makeProjectWithPlan([{ id: 'T-1' }, { id: 'T-2' }]);
     mkProjectTrack(p);
-    const ctx = makeContext({ ccClient: makeMockCcClient('// tests') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('// tests') });
     const result = await runExecute(
       { projectName: 'test', projectPath: p.projectPath, testIds: [], additionalInstruction: '' },
       ctx,
@@ -226,7 +226,7 @@ describe('tspr_generate_code_and_execute', () => {
       { id: 'T-1' }, { id: 'T-2' }, { id: 'T-3' }, { id: 'T-4' },
     ]);
     mkProjectTrack(p);
-    const ctx = makeContext({ ccClient: makeMockCcClient('// tests') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('// tests') });
 
     // Run with 2 specific IDs
     const result = await runExecute(
@@ -243,7 +243,7 @@ describe('tspr_generate_code_and_execute', () => {
     const scenarios = Array.from({ length: 15 }, (_, i) => ({ id: `T-${i + 1}` }));
     const p = makeProjectWithPlan(scenarios);
     mkProjectTrack(p);
-    const ctx = makeContext({ ccClient: makeMockCcClient('// tests') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('// tests') });
     const result = await runExecute(
       { projectName: 'test', projectPath: p.projectPath, testIds: [], additionalInstruction: '' },
       ctx,
@@ -260,7 +260,7 @@ describe('tspr_generate_code_and_execute', () => {
   it('EXECUTE-010: all-fail sets status=all-failed', async () => {
     const p = makeProjectWithPlan([{ id: 'T-1' }, { id: 'T-2' }]);
     mkProjectTrack(p);
-    const ctx = makeContext({ ccClient: makeMockCcClient('// tests') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('// tests') });
     const result = await runExecute(
       { projectName: 'test', projectPath: p.projectPath, testIds: [], additionalInstruction: '' },
       ctx,
@@ -275,7 +275,7 @@ describe('tspr_generate_code_and_execute', () => {
   it('EXECUTE-011: partial pass sets status=partial', async () => {
     const p = makeProjectWithPlan([{ id: 'T-1' }, { id: 'T-2' }]);
     mkProjectTrack(p);
-    const ctx = makeContext({ ccClient: makeMockCcClient('// tests') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('// tests') });
     const result = await runExecute(
       { projectName: 'test', projectPath: p.projectPath, testIds: [], additionalInstruction: '' },
       ctx,
@@ -290,7 +290,7 @@ describe('tspr_generate_code_and_execute', () => {
   it('EXECUTE-014: all-skipped returns status=ok', async () => {
     const p = makeProjectWithPlan([{ id: 'T-1' }, { id: 'T-2' }]);
     mkProjectTrack(p);
-    const ctx = makeContext({ ccClient: makeMockCcClient('// tests') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('// tests') });
     const result = await runExecute(
       { projectName: 'test', projectPath: p.projectPath, testIds: [], additionalInstruction: '' },
       ctx,
@@ -307,7 +307,7 @@ describe('tspr_generate_code_and_execute', () => {
   it('ARTIFACT-007: at least one .spec.ts exists under generated_tests/ after execute', async () => {
     const p = makeProjectWithPlan([{ id: 'T-1' }]);
     mkProjectTrack(p);
-    const ctx = makeContext({ ccClient: makeMockCcClient('import { test } from "vitest"; test("x", () => {});') });
+    const ctx = makeContext({ llmClient: makeMockCcClient('import { test } from "vitest"; test("x", () => {});') });
     await runExecute(
       { projectName: 'my-project', projectPath: p.projectPath, testIds: [], additionalInstruction: '' },
       ctx,

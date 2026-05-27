@@ -293,7 +293,7 @@ ${prdContext}
 Return ONLY valid JSON.`;
 
       try {
-        const ccResult = await ctx.ccClient.run({
+        const ccResult = await ctx.llmClient.run({
           model: 'haiku',
           prompt,
           timeoutMs: 60_000,

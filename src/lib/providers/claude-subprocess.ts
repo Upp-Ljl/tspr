@@ -1,13 +1,13 @@
 /**
  * src/lib/providers/claude-subprocess.ts
- * CcProvider implementation that spawns a `claude` CLI subprocess.
+ * LlmProvider implementation that spawns a `claude` CLI subprocess.
  * Extracted from the original src/lib/cc.ts implementation.
  */
 
 import { spawn } from 'node:child_process';
-import { CcError, ErrCode } from '../errors.js';
-import type { CcProvider } from './types.js';
-import type { CcRunOptions, CcRunResult } from '../cc.js';
+import { LlmError, ErrCode } from '../errors.js';
+import type { LlmProvider } from './types.js';
+import type { LlmRunOptions, LlmRunResult } from '../cc.js';
 import {
   CLAUDE_SUBPROCESS_DEFAULTS,
   resolveModelId,
@@ -55,7 +55,7 @@ export interface ClaudeSubprocessConfig {
 // Implementation
 // ─────────────────────────────────────────────
 
-export class ClaudeSubprocessProvider implements CcProvider {
+export class ClaudeSubprocessProvider implements LlmProvider {
   private readonly binary: string;
   private readonly extraArgs: string[];
   private readonly defaultTimeoutMs: number;
@@ -71,7 +71,7 @@ export class ClaudeSubprocessProvider implements CcProvider {
     };
   }
 
-  async chat(opts: CcRunOptions): Promise<CcRunResult> {
+  async chat(opts: LlmRunOptions): Promise<LlmRunResult> {
     const timeoutMs = opts.timeoutMs ?? this.defaultTimeoutMs;
     const modelId = resolveModelId(opts.model, this.modelAliases);
 
@@ -86,7 +86,7 @@ export class ClaudeSubprocessProvider implements CcProvider {
 
     const startMs = Date.now();
 
-    return new Promise<CcRunResult>((resolve, reject) => {
+    return new Promise<LlmRunResult>((resolve, reject) => {
       let settled = false;
       let timedOut = false;
 
@@ -126,7 +126,7 @@ export class ClaudeSubprocessProvider implements CcProvider {
         clearTimeout(timer);
         opts.abortSignal?.removeEventListener('abort', onAbort);
         reject(
-          new CcError(ErrCode.ERR_CC_FAILED, `Failed to spawn claude CLI: ${err.message}`, {
+          new LlmError(ErrCode.ERR_CC_FAILED, `Failed to spawn claude CLI: ${err.message}`, {
             cause: err,
           }),
         );
@@ -146,7 +146,7 @@ export class ClaudeSubprocessProvider implements CcProvider {
 
         if (timedOut) {
           return reject(
-            new CcError(
+            new LlmError(
               ErrCode.ERR_CC_TIMEOUT,
               `claude CLI timed out after ${timeoutMs}ms`,
               { data: { timeoutMs } },
@@ -156,13 +156,13 @@ export class ClaudeSubprocessProvider implements CcProvider {
 
         if (opts.abortSignal?.aborted) {
           return reject(
-            new CcError(ErrCode.ERR_CC_FAILED, 'claude CLI subprocess was aborted'),
+            new LlmError(ErrCode.ERR_CC_FAILED, 'claude CLI subprocess was aborted'),
           );
         }
 
         if (exitCode !== 0) {
           return reject(
-            new CcError(
+            new LlmError(
               ErrCode.ERR_CC_FAILED,
               `claude CLI exited with code ${exitCode}: ${stderr.trim()}`,
               { data: { exitCode, stderr: stderr.slice(0, 500) } },

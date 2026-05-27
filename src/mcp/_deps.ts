@@ -3,19 +3,19 @@
  * Round 5 integration: replace with `export * from '../lib'`
  */
 
-export interface CcRunOptions {
+export interface LlmRunOptions {
   model: 'haiku' | 'sonnet' | 'opus';
   prompt: string;
   timeoutMs?: number;
 }
 
-export interface CcRunResult {
+export interface LlmRunResult {
   stdout: string;
   costUsd: number;
 }
 
-export interface CcClient {
-  run(opts: CcRunOptions): Promise<CcRunResult>;
+export interface LlmClient {
+  run(opts: LlmRunOptions): Promise<LlmRunResult>;
 }
 
 export interface Stmt {

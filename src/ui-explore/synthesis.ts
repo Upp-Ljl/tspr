@@ -1,5 +1,5 @@
 import type { AgentDiscovery, Scenario } from './types.js';
-import type { CcClient } from './_deps.js';
+import type { LlmClient } from './_deps.js';
 
 const SYNTHESIS_TIMEOUT_MS = 60_000;
 
@@ -27,7 +27,7 @@ export interface SynthesisResult {
  */
 export async function runSynthesis(
   discoveries: AgentDiscovery[],
-  ccClient: CcClient,
+  llmClient: LlmClient,
 ): Promise<SynthesisResult> {
   if (discoveries.length === 0) {
     return { scenarios: [] };
@@ -45,7 +45,7 @@ export async function runSynthesis(
 
   try {
     const result = await Promise.race([
-      ccClient.run({ model: 'sonnet', prompt, timeoutMs: SYNTHESIS_TIMEOUT_MS }),
+      llmClient.run({ model: 'sonnet', prompt, timeoutMs: SYNTHESIS_TIMEOUT_MS }),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('synthesis timeout')), SYNTHESIS_TIMEOUT_MS),
       ),

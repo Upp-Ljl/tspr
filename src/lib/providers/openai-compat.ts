@@ -1,12 +1,12 @@
 /**
  * src/lib/providers/openai-compat.ts
- * CcProvider implementation for any OpenAI-compatible /v1/chat/completions endpoint.
+ * LlmProvider implementation for any OpenAI-compatible /v1/chat/completions endpoint.
  * Covers: OpenAI, OpenRouter, Together, vLLM, Anyscale, MiniMax (newer API), etc.
  */
 
-import { CcError, ErrCode } from '../errors.js';
-import type { CcProvider } from './types.js';
-import type { CcRunOptions, CcRunResult } from '../cc.js';
+import { LlmError, ErrCode } from '../errors.js';
+import type { LlmProvider } from './types.js';
+import type { LlmRunOptions, LlmRunResult } from '../cc.js';
 import {
   OPENAI_COMPAT_DEFAULTS,
   resolveModelId,
@@ -108,7 +108,7 @@ export interface OpenAICompatConfig {
 // Implementation
 // ─────────────────────────────────────────────
 
-export class OpenAICompatProvider implements CcProvider {
+export class OpenAICompatProvider implements LlmProvider {
   private readonly baseURL: string;
   private readonly apiKeyEnv: string;
   private readonly defaultTimeoutMs: number;
@@ -125,7 +125,7 @@ export class OpenAICompatProvider implements CcProvider {
     };
   }
 
-  async chat(opts: CcRunOptions): Promise<CcRunResult> {
+  async chat(opts: LlmRunOptions): Promise<LlmRunResult> {
     const startMs = Date.now();
     const modelId = resolveModelId(opts.model, this.modelAliases);
     const apiKey = process.env[this.apiKeyEnv];
@@ -171,15 +171,15 @@ export class OpenAICompatProvider implements CcProvider {
 
       if (controller.signal.aborted) {
         if (opts.abortSignal?.aborted) {
-          throw new CcError(ErrCode.ERR_CC_FAILED, 'HTTP request was aborted by caller');
+          throw new LlmError(ErrCode.ERR_CC_FAILED, 'HTTP request was aborted by caller');
         }
-        throw new CcError(
+        throw new LlmError(
           ErrCode.ERR_CC_TIMEOUT,
           `HTTP request timed out after ${timeoutMs}ms`,
           { data: { timeoutMs } },
         );
       }
-      throw new CcError(ErrCode.ERR_CC_FAILED, `HTTP fetch failed: ${(err as Error).message}`, {
+      throw new LlmError(ErrCode.ERR_CC_FAILED, `HTTP fetch failed: ${(err as Error).message}`, {
         cause: err,
       });
     } finally {
@@ -193,7 +193,7 @@ export class OpenAICompatProvider implements CcProvider {
       // Read body for error context, but NEVER log apiKey
       let errBody = '';
       try { errBody = await response.text(); } catch { /* ignore */ }
-      throw new CcError(
+      throw new LlmError(
         ErrCode.ERR_CC_FAILED,
         `HTTP ${response.status} from ${this.baseURL}: ${errBody.slice(0, 200)}`,
         { data: { status: response.status, url: this.baseURL } },
@@ -204,7 +204,7 @@ export class OpenAICompatProvider implements CcProvider {
     try {
       json = await response.json() as OpenAIResponse;
     } catch (err) {
-      throw new CcError(
+      throw new LlmError(
         ErrCode.ERR_CC_OUTPUT_INVALID,
         `Failed to parse JSON response from ${this.baseURL}`,
         { cause: err },
@@ -213,7 +213,7 @@ export class OpenAICompatProvider implements CcProvider {
 
     const content = json.choices?.[0]?.message?.content;
     if (typeof content !== 'string') {
-      throw new CcError(
+      throw new LlmError(
         ErrCode.ERR_CC_OUTPUT_INVALID,
         `Unexpected response shape from ${this.baseURL}: missing choices[0].message.content`,
       );

@@ -22,13 +22,13 @@ if (!key) {
 }
 process.env.MINIMAX_API_KEY = key;
 
-const { createCcClient, loadConfig } = await import(`file://${repoRoot.replace(/\\/g, '/')}/dist/lib/index.js`);
+const { createLlmClient, loadConfig } = await import(`file://${repoRoot.replace(/\\/g, '/')}/dist/lib/index.js`);
 
 const config = loadConfig();
 console.log(`[smoke-minimax] provider=${config.provider}`);
 console.log(`[smoke-minimax] aliases=${JSON.stringify(config.modelAlias)}`);
 
-const cc = createCcClient(config);
+const cc = createLlmClient(config);
 
 console.log('[smoke-minimax] sending tiny prompt to haiku alias...');
 const t0 = Date.now();

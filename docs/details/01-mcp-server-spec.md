@@ -13,7 +13,7 @@ This document specifies the MCP server module (`src/mcp/` + `src/tools/`) of tsp
 It covers: transport, bootstrap, tool registry, each of the 8 tools, concurrency, logging,
 error handling, process lifecycle, and file layout.
 
-Out of scope for this doc: `ccClient` engine internals, Docker sandbox internals,
+Out of scope for this doc: `llmClient` engine internals, Docker sandbox internals,
 browser pool internals, SQLite schema migration logic.
 
 ---
@@ -211,7 +211,7 @@ MCP Client (cc / Cursor / VS Code)
   bootstrap  generateAndExecute  rerun
      │             │             │
      │       ┌─────┼────────┐    │
-     │    ccClient  docker  browserPool
+     │    llmClient  docker  browserPool
      │             │
      └─────────────┘
                    │
@@ -793,7 +793,7 @@ src/
 │   └── rerunTests.ts      — tool 8: tspr_rerun_tests
 │
 ├── engine/
-│   └── ccClient.ts        — cc subprocess wrapper (spawn, timeout, parse stdout)
+│   └── llmClient.ts        — cc subprocess wrapper (spawn, timeout, parse stdout)
 │
 ├── sandbox/
 │   ├── docker.ts          — dockerode wrapper, container lifecycle, tracker set
@@ -818,7 +818,7 @@ src/
 interface ServerContext {
   config: ResolvedConfig;         // merged CLI + file config
   db: Database;                   // better-sqlite3 instance
-  ccClient: CcClient;             // cc subprocess wrapper
+  llmClient: LlmClient;             // cc subprocess wrapper
   docker: DockerManager;          // dockerode wrapper
   browserPool: BrowserPool;       // Playwright pool
 }

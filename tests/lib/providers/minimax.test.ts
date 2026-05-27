@@ -6,7 +6,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MinimaxProvider } from '../../../src/lib/providers/minimax.js';
-import { CcError } from '../../../src/lib/errors.js';
+import { LlmError } from '../../../src/lib/errors.js';
 import { ErrCode } from '../../../src/lib/errors.js';
 
 // ─────────────────────────────────────────────
@@ -194,22 +194,22 @@ describe('MinimaxProvider — happy path', () => {
 // ─────────────────────────────────────────────
 
 describe('MinimaxProvider — error handling', () => {
-  it('throws CcError on HTTP 4xx', async () => {
+  it('throws LlmError on HTTP 4xx', async () => {
     mockFetch(403, 'Forbidden');
     const p = new MinimaxProvider();
     let caught: unknown;
     try { await p.chat({ model: 'haiku', prompt: 'test' }); } catch (e) { caught = e; }
-    expect(caught).toBeInstanceOf(CcError);
-    expect((caught as CcError).code).toBe(ErrCode.ERR_CC_FAILED);
+    expect(caught).toBeInstanceOf(LlmError);
+    expect((caught as LlmError).code).toBe(ErrCode.ERR_CC_FAILED);
   });
 
-  it('throws CcError on network failure', async () => {
+  it('throws LlmError on network failure', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new Error('Network unreachable')));
     const p = new MinimaxProvider();
     let caught: unknown;
     try { await p.chat({ model: 'haiku', prompt: 'test' }); } catch (e) { caught = e; }
-    expect(caught).toBeInstanceOf(CcError);
-    expect((caught as CcError).code).toBe(ErrCode.ERR_CC_FAILED);
+    expect(caught).toBeInstanceOf(LlmError);
+    expect((caught as LlmError).code).toBe(ErrCode.ERR_CC_FAILED);
   });
 });
 

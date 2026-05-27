@@ -157,7 +157,7 @@ Return ONLY the TypeScript code, no markdown fences.`;
 
   let generatedCode = '';
   try {
-    const ccResult = await ctx.ccClient.run({
+    const ccResult = await ctx.llmClient.run({
       model: 'sonnet',
       prompt: codeGenPrompt,
       timeoutMs: 120_000,

@@ -90,7 +90,7 @@ ${codeSummary}`;
     for (let attempt = 0; attempt < 2; attempt++) {
       let ccResult;
       try {
-        ccResult = await ctx.ccClient.run({
+        ccResult = await ctx.llmClient.run({
           model: 'haiku',
           prompt,
           timeoutMs: 60_000,

@@ -95,14 +95,14 @@ export class SandboxError extends TsprError {
 }
 
 /** Errors originating from the claude CLI subprocess. */
-export class CcError extends TsprError {
+export class LlmError extends TsprError {
   constructor(
     code: string,
     message: string,
     options?: { cause?: unknown; data?: Record<string, unknown> },
   ) {
     super(code, message, options);
-    this.name = 'CcError';
+    this.name = 'LlmError';
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }

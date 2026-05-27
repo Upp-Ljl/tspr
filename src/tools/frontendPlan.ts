@@ -123,7 +123,7 @@ Return ONLY valid JSON.`;
 
     for (let i = 0; i < N; i++) {
       agentPromises.push(
-        ctx.ccClient
+        ctx.llmClient
           .run({ model: 'sonnet', prompt, timeoutMs: 300_000 })
           .then((res) => {
             try {
@@ -185,7 +185,7 @@ Return ONLY valid JSON.`;
     }> = [];
 
     try {
-      const scenarioResult = await ctx.ccClient.run({
+      const scenarioResult = await ctx.llmClient.run({
         model: 'haiku',
         prompt: coveragePrompt,
         timeoutMs: 60_000,

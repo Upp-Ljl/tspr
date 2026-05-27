@@ -14,7 +14,7 @@ import type {
   StopReason,
   UnexploredTask,
 } from './types.js';
-import type { CcClient, Logger } from './_deps.js';
+import type { LlmClient, Logger } from './_deps.js';
 import { FrontierQueue } from './frontier.js';
 import { AgentLoop, type ExplorationState } from './agent.js';
 import { canonicalizeUrl } from './dedup.js';
@@ -53,10 +53,10 @@ function defaultLogger(): Logger {
 }
 
 /**
- * Create a default CcClient that shells out to the `claude` CLI.
- * Tests should inject a mock CcClient instead.
+ * Create a default LlmClient that shells out to the `claude` CLI.
+ * Tests should inject a mock LlmClient instead.
  */
-function defaultCcClient(): CcClient {
+function defaultCcClient(): LlmClient {
   return {
     async run({ model, prompt, timeoutMs }) {
       const bin = process.env['TSPR_CC_BIN'] ?? 'claude';
@@ -75,7 +75,7 @@ export interface ExploreUIInputs {
   projectPath: string;
   options?: ExploreUIOptions;
   /** Injectable cc client for testing. If not provided, uses default claude CLI. */
-  _ccClient?: CcClient;
+  _ccClient?: LlmClient;
   /** Injectable logger. If not provided, uses no-op logger. */
   _logger?: Logger;
 }
@@ -90,7 +90,7 @@ export async function exploreUI(inputs: {
   baseUrl: string;
   projectPath: string;
   options?: ExploreUIOptions;
-  _ccClient?: CcClient;
+  _ccClient?: LlmClient;
   _logger?: Logger;
 }): Promise<ExplorationReport> {
   const {
@@ -102,7 +102,7 @@ export async function exploreUI(inputs: {
   } = inputs;
 
   const logger = _logger ?? defaultLogger();
-  const ccClient = _ccClient ?? defaultCcClient();
+  const llmClient = _ccClient ?? defaultCcClient();
 
   // Clamp agentCount (B-3-5)
   const rawAgentCount = options.agentCount ?? DEFAULT_AGENT_COUNT;
@@ -180,7 +180,7 @@ export async function exploreUI(inputs: {
     // Create agent loops
     const agents: AgentLoop[] = [];
     for (let i = 1; i <= agentCount; i++) {
-      const agent = new AgentLoop(browser, state, ccClient, logger, i);
+      const agent = new AgentLoop(browser, state, llmClient, logger, i);
       if (storageStateJson) {
         agent.setStorageState(storageStateJson);
       }
@@ -275,7 +275,7 @@ export async function exploreUI(inputs: {
     // Run synthesis (excluded from maxCcCalls — B-3-18)
     const { scenarios, synthesisError } = await runSynthesis(
       [...state.discoveries.values()],
-      ccClient,
+      llmClient,
     );
 
     // Build report
