@@ -44,23 +44,20 @@ function makeFixtureProject(): FixtureProject {
   const tmpDir = path.join(os.tmpdir(), `tspr-integ-${crypto.randomUUID()}`);
   fs.mkdirSync(tmpDir, { recursive: true });
 
-  // Minimal package.json with vitest as a dev dep.
-  // The sandbox image has Node 24 but no local node_modules; npm install will
-  // pull vitest inside the container before running.
+  // Minimal package.json — not used for npm install any more (runtime is pre-baked
+  // in /tspr-runtime inside the image), but needed so projectPath looks like a project.
   fs.writeFileSync(
     path.join(tmpDir, 'package.json'),
     JSON.stringify({
       name: 'tspr-fixture',
       version: '1.0.0',
       private: true,
-      devDependencies: {
-        vitest: '^1.6.0',
-      },
     }, null, 2),
     'utf-8',
   );
 
-  // Trivial spec that always passes — no server, no supertest
+  // Trivial spec that always passes — no server, no supertest.
+  // The new exec flow copies this into /tspr-runtime/tests inside the container.
   const tsprDir = path.join(tmpDir, '.tspr');
   const generatedTestsDir = path.join(tsprDir, 'generated_tests');
   fs.mkdirSync(generatedTestsDir, { recursive: true });

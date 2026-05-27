@@ -207,8 +207,9 @@ Return ONLY the TypeScript code, no markdown fences.`;
     }
   } else {
     // Production path: use real sandbox module (createSandbox / exec / pullArtifacts / dispose).
-    // The generated tests dir is under projectPath/.tspr/generated_tests, so it is already
-    // available inside the container at /work/.tspr/generated_tests.
+    // Generated tests are available inside the container at /work/.tspr/generated_tests.
+    // We copy them into /tspr-runtime/tests (the pre-baked isolated runtime) to avoid
+    // pnpm symlink chaos from the user project's node_modules.
     let handle;
     try {
       handle = await createSandbox({
@@ -229,18 +230,37 @@ Return ONLY the TypeScript code, no markdown fences.`;
     }
 
     try {
-      const installResult = await handle.exec(
-        'npm install --silent --no-audit --no-fund',
-        { cwd: '/work', timeout: 180_000 },
+      // Copy generated tests into the isolated runtime dir (no npm install needed — pre-baked)
+      const copyResult = await handle.exec(
+        'rm -rf /tspr-runtime/tests/* && cp -r /work/.tspr/generated_tests/. /tspr-runtime/tests/',
+        { cwd: '/', timeout: 30_000 },
       );
-      if (installResult.exitCode !== 0) {
-        ctx.logger.warn('npm install exited non-zero', { exitCode: installResult.exitCode, stderr: installResult.stderr });
+      if (copyResult.exitCode !== 0) {
+        ctx.logger.warn('test copy exited non-zero', {
+          exitCode: copyResult.exitCode,
+          stderr: copyResult.stderr,
+          stdout: copyResult.stdout,
+        });
       }
 
+      // Run vitest from the isolated runtime — absolute path avoids npx/pnpm resolution
+      const testBaseUrl = process.env.TSPR_TEST_BASE_URL ?? 'http://host.docker.internal:3003';
       const testResult = await handle.exec(
-        'npx vitest run .tspr/generated_tests/ --reporter=json 2>&1 || true',
-        { cwd: '/work', timeout: ctx.config.executeTimeoutMs },
+        'node ./node_modules/vitest/vitest.mjs run tests/ --reporter=json 2>&1 || true',
+        {
+          cwd: '/tspr-runtime',
+          timeout: ctx.config.executeTimeoutMs,
+          env: { TEST_BASE_URL: testBaseUrl },
+        },
       );
+
+      if (testResult.exitCode !== 0 && testResult.stderr) {
+        ctx.logger.warn('vitest exited non-zero', {
+          exitCode: testResult.exitCode,
+          stderr: testResult.stderr,
+        });
+      }
+
       sandboxResult = { stdout: testResult.stdout, stderr: testResult.stderr, exitCode: testResult.exitCode };
 
       await handle.pullArtifacts();
