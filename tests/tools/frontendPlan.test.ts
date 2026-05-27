@@ -1,15 +1,19 @@
 /**
  * Tests for Tool 4: tspr_generate_frontend_test_plan
- * Covers: B-4-1, B-4-7, B-4-8 (session lookup), input schema validation
+ * Covers: B-4-1, B-4-7, B-4-8 (session lookup), input schema validation,
+ *         end-to-end: bootstrap → frontendPlan succeeds without ERR_NOT_BOOTSTRAPPED
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'node:fs';
+import * as http from 'node:http';
 import * as path from 'node:path';
+import { bootstrapTool } from '../../src/tools/bootstrap.js';
 import { frontendPlanTool, frontendPlanInputSchema } from '../../src/tools/frontendPlan.js';
 import {
   createTestProject,
   makeContext,
   makeMockDb,
+  makeMockCcClient,
   getMcpErrorData,
   type TestProject,
 } from '../mcp/helpers.js';
@@ -93,5 +97,51 @@ describe('tspr_generate_frontend_test_plan', () => {
     // If multiple bootstraps exist for same projectPath, most recent is used
     // We verify this via the mock DB returning the correct value
     expect(true).toBe(true); // structural test — validated via code review
+  });
+
+  // ─── B-4-8 e2e: bootstrap first, then frontendPlan finds the session ──────
+  it('FEPLAN-008 (B-4-8 e2e): after bootstrap, frontendPlan does NOT throw ERR_NOT_BOOTSTRAPPED', async () => {
+    const p = mkProject();
+    // Use a shared in-memory DB for both tool calls
+    const db = makeMockDb();
+
+    // Step 1: call bootstrap to seed the sessions table
+    const bootstrapCtx = makeContext({ db });
+    await bootstrapTool.handler(
+      { projectPath: p.projectPath, type: 'frontend', testScope: 'codebase', localPort: 0 /* invalid port, will be overridden */ },
+      bootstrapCtx,
+    );
+    // Use a real ephemeral HTTP server so frontendPlan's reachability check passes
+    const server = http.createServer((_req, res) => { res.writeHead(200); res.end('ok'); });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const addr = server.address() as { port: number };
+    const port = addr.port;
+
+    // Re-insert the session row with the actual ephemeral port we opened
+    // (bootstrap wrote port 0, so we overwrite the local_port in the sessions row)
+    const sessionRows = db.getRows('sessions');
+    if (sessionRows.length > 0) sessionRows[0]['local_port'] = port;
+
+    // Step 2: call frontendPlan; it should find the session and NOT throw ERR_NOT_BOOTSTRAPPED.
+    // It will throw ERR_PLAYWRIGHT_MISSING (Playwright not installed in test env) — that is
+    // past the session-check gate, proving sessions lookup succeeded.
+    const ccClient = makeMockCcClient(JSON.stringify({ pages: ['/'], interactions: ['click button'] }));
+    const frontendCtx = makeContext({ db, ccClient });
+
+    let thrownCode: string | null = null;
+    try {
+      await frontendPlanTool.handler({ projectPath: p.projectPath, needLogin: false }, frontendCtx);
+    } catch (err) {
+      const data = getMcpErrorData(err);
+      thrownCode = data?.code ?? null;
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+
+    // Assertion 5: ERR_NOT_BOOTSTRAPPED must NOT be thrown (session was found)
+    expect(thrownCode).not.toBe('ERR_NOT_BOOTSTRAPPED');
+    // Assertion 6: error is ERR_PLAYWRIGHT_MISSING (past the session gate)
+    // or null (if Playwright happens to be installed) — either proves session lookup worked
+    expect(thrownCode === 'ERR_PLAYWRIGHT_MISSING' || thrownCode === null).toBe(true);
   });
 });
