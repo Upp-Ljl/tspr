@@ -10,49 +10,107 @@
 
 <header class="topbar">
   <a class="topbar__brand" href="/">tspr<span>/dashboard</span></a>
-  <div class="topbar__controls">
-    <input
-      id="search-input"
-      class="topbar__search"
-      type="search"
-      placeholder="Search project, run id, tool…"
-      autocomplete="off"
-    />
-    <button class="filter-btn active" data-filter="all">All</button>
-    <button class="filter-btn" data-filter="passing">Passing</button>
-    <button class="filter-btn" data-filter="failing">Failing</button>
-    <button class="filter-btn" data-filter="partial">Partial</button>
-    <span class="poll-dot" title="Live updates every 5s"></span>
+  <nav class="topbar__nav">
+    <a href="/" class="active">Overview</a>
+    <a href="/compare">Compare</a>
+    <a href="/cost">Cost</a>
+  </nav>
+  <div class="topbar__right">
+    <span class="poll-dot" title="Live updates every 10s"></span>
   </div>
 </header>
 
 <main class="page">
-  <div class="page__title">Runs — newest first</div>
-  <div class="card">
-    <table class="runs-table">
-      <thead>
-        <tr>
-          <th>Run ID</th>
-          <th>Project</th>
-          <th>Status</th>
-          <th>Tool</th>
-          <th>Started</th>
-          <th>Duration</th>
-          <th>Error</th>
-        </tr>
-      </thead>
-      <tbody id="runs-body">
-        <!-- Rows injected by JS or pre-rendered via {{RUNS_ROWS}} -->
-        {{RUNS_ROWS}}
-      </tbody>
-    </table>
+
+  <!-- Quick stats row -->
+  <div class="stats-row" id="stats-row">
+    <div class="stat-tile"><div class="stat-tile__num" id="stat-runs">—</div><div class="stat-tile__label">Total Runs</div></div>
+    <div class="stat-tile"><div class="stat-tile__num" id="stat-tests">—</div><div class="stat-tile__label">Tests Run</div></div>
+    <div class="stat-tile"><div class="stat-tile__num" id="stat-pass-rate">—</div><div class="stat-tile__label">Avg Pass Rate</div></div>
+    <div class="stat-tile"><div class="stat-tile__num" id="stat-projects">—</div><div class="stat-tile__label">Projects</div></div>
   </div>
+
+  <!-- Trend strip -->
+  <div class="trend-strip" id="trend-strip">
+    <span class="trend-strip__label">30-day trend</span>
+    <span class="trend-strip__arrow flat" id="trend-arrow">— no data</span>
+    <div class="trend-strip__spark" id="trend-sparkline"></div>
+  </div>
+
+  <!-- Two-column: projects left, issues right -->
+  <div class="two-col">
+
+    <!-- Left: Projects -->
+    <div>
+      <div class="section-header">
+        Projects <span class="section-header__count" id="projects-count">0</span>
+      </div>
+      <div class="project-list" id="project-list">
+        <div class="empty-state">
+          <div class="empty-state__heading">No runs yet</div>
+          <div class="empty-state__desc">tspr hasn't run yet. Get started:</div>
+          <pre class="empty-state__code">// In Claude Code, register the MCP server:
+tspr mcp
+
+// Then call from cc:
+tspr_bootstrap_tests({ projectPath: "./your-project" })</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Top issues -->
+    <div>
+      <div class="section-header">
+        Top Issues <span class="section-header__count" id="issues-count">0</span>
+      </div>
+      <div class="issues-list" id="issues-list">
+        <div class="empty-state">
+          <div class="empty-state__heading">No issues found</div>
+          <div class="empty-state__desc">All tests passing, or no runs yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Run history (collapsed by default) -->
+  <div style="margin-top:2rem">
+    <div class="section-header" style="cursor:pointer" id="history-toggle">
+      Recent Runs <span class="section-header__count" id="history-count">0</span>
+      <span style="margin-left:auto;font-size:0.75rem;color:var(--text-dim)" id="history-caret">▼ show</span>
+    </div>
+    <div id="history-panel" style="display:none">
+      <div class="card">
+        <table class="runs-table">
+          <thead>
+            <tr>
+              <th>Run ID</th>
+              <th>Project</th>
+              <th>Status</th>
+              <th>Tool</th>
+              <th>Started</th>
+              <th>Duration</th>
+            </tr>
+          </thead>
+          <tbody id="runs-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
 </main>
 
-<script>
-// Inline initial data to avoid a round-trip
-window.__RUNS__ = {{RUNS_JSON}};
-</script>
+<!-- Side panel for run drill-down -->
+<div class="side-panel__overlay" id="panel-overlay"></div>
+<aside class="side-panel" id="side-panel">
+  <div class="side-panel__header">
+    <div class="side-panel__title" id="panel-title">Run detail</div>
+    <button class="side-panel__close" id="panel-close" aria-label="Close">✕</button>
+  </div>
+  <div class="side-panel__body" id="panel-body">
+    <div class="spinner"></div>
+  </div>
+</aside>
+
 <script src="/app.js"></script>
 </body>
 </html>

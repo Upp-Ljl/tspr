@@ -4,14 +4,23 @@
  * Local HTTP dashboard server for tspr. Zero external deps — uses only
  * node:http, node:fs, node:path, node:os, node:url.
  *
- * Routes:
- *   GET /                        → index.html with {{RUNS_JSON}} substituted
+ * Routes (existing):
+ *   GET /                        → index.html (projects + issues view)
  *   GET /api/runs                → JSON array of runs (newest first)
  *   GET /api/runs/:runId         → JSON single run + test_results
- *   GET /runs/:runId             → run.html with run detail substituted
+ *   GET /runs/:runId             → run.html with run detail (side panel)
  *   GET /style.css               → dashboard CSS
  *   GET /app.js                  → dashboard JS
  *   GET /artifacts/:runId/:file  → static file from ~/.tspr/runs/<runId>/<file>
+ *
+ * Routes (new):
+ *   GET /compare                 → compare.html (two-run diff view)
+ *   GET /cost                    → cost.html (token/spend view)
+ *   GET /api/projects            → project health summary list
+ *   GET /api/issues              → top failures aggregated cross-run
+ *   GET /api/trends?days=N       → pass rate over time
+ *   GET /api/compare?a=X&b=Y     → diff between two runs
+ *   GET /api/file?path=<abs>     → file content (allowlist-gated)
  */
 
 import http from 'node:http';
@@ -20,6 +29,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { aggregateTopIssues } from './issues.js';
+import { compareRuns } from './compare.js';
 
 // ─── public interface ─────────────────────────────────────────────────────────
 
@@ -32,6 +43,8 @@ export interface DashboardOptions {
   host?: string;
   /** Path to db.sqlite. Default: ~/.tspr/db.sqlite */
   dbPath?: string;
+  /** Additional allowed directories for /api/file. Default: [] */
+  extraAllowedPaths?: string[];
 }
 
 export interface DashboardHandle {
@@ -39,9 +52,21 @@ export interface DashboardHandle {
   close: () => Promise<void>;
 }
 
-// ─── SQLite shape (server.ts schema — integer PK) ────────────────────────────
+// ─── SQLite row shapes ────────────────────────────────────────────────────────
 
-interface RunRow {
+/** Real schema (TEXT PK, tool_name, project_path, status) */
+interface RunRowReal {
+  id: string;
+  tool_name: string;
+  project_path: string | null;
+  started_at: string;
+  completed_at: string | null;
+  status: string;
+  error_code: string | null;
+}
+
+/** Legacy schema (INTEGER PK, tool, outcome) — kept for tests that use old schema */
+interface RunRowLegacy {
   id: number;
   session_id: string | null;
   tool: string;
@@ -53,13 +78,30 @@ interface RunRow {
   duration_ms: number | null;
 }
 
+/** Normalized run row used internally */
+interface RunRow {
+  id: string;
+  tool: string;
+  projectPath: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  status: string;
+  errorCode: string | null;
+  durationMs: number | null;
+}
+
 interface TestResultRow {
-  id: number;
-  run_id: number;
-  test_id: string;
-  title: string | null;
-  outcome: string | null;
-  stack: string | null;
+  id: string;
+  runId: string;
+  testId: string;
+  testName: string;
+  testFile: string;
+  testType: string;
+  status: string;
+  errorMessage: string | null;
+  durationMs: number | null;
+  suggestedFixRegion: string | null;
+  suggestedPatch: string | null;
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -71,7 +113,7 @@ function readUiFile(name: string): string {
   return fs.readFileSync(path.join(UI_DIR, name), 'utf-8');
 }
 
-function escHtml(s: string): string {
+export function escHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -79,44 +121,20 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function pillClass(status: string): string {
-  const map: Record<string, string> = {
-    ok: 'pill--ok',
-    partial: 'pill--partial',
-    failed: 'pill--failed',
-    'all-failed': 'pill--all-failed',
-    error: 'pill--error',
-    'in-progress': 'pill--in-progress',
-  };
-  return map[status] ?? 'pill--in-progress';
-}
-
-function pillText(status: string): string {
-  const map: Record<string, string> = {
-    ok: '✓ ok',
-    partial: '⚠ partial',
-    failed: '✗ failed',
-    'all-failed': '✗ all-failed',
-    error: '✗ error',
-    'in-progress': '⟳ running',
-  };
-  return map[status] ?? status;
-}
-
-function projectLabel(projectPath: string | null | undefined): string {
+export function projectLabel(projectPath: string | null | undefined): string {
   if (!projectPath) return '—';
   const parts = projectPath.replace(/\\/g, '/').split('/');
   return parts[parts.length - 1] ?? projectPath;
 }
 
-function formatMs(ms: number | null | undefined): string {
+export function formatMs(ms: number | null | undefined): string {
   if (ms == null) return '—';
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
 }
 
-function relativeTime(iso: string | null | undefined): string {
+export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return '—';
   const delta = (Date.now() - new Date(iso).getTime()) / 1000;
   if (delta < 60) return `${Math.round(delta)}s ago`;
@@ -125,57 +143,169 @@ function relativeTime(iso: string | null | undefined): string {
   return `${Math.round(delta / 86400)}d ago`;
 }
 
+function applyTemplate(template: string, vars: Record<string, string>): string {
+  let result = template;
+  for (const [key, value] of Object.entries(vars)) {
+    result = result.split(`{{${key}}}`).join(value);
+  }
+  return result;
+}
+
 // ─── SQLite read-only helpers ─────────────────────────────────────────────────
 
-/**
- * Open SQLite with better-sqlite3 (already in deps).
- * Returns a thin interface; we import dynamically to allow the module to load
- * even when better-sqlite3 is not present (test environments with :memory: mock).
- */
-async function openSqlite(dbFilePath: string): Promise<{
-  getRuns: () => RunRow[];
-  getRun: (id: number) => RunRow | undefined;
-  getTestResults: (runId: number) => TestResultRow[];
-  close: () => void;
-}> {
-  // Dynamic import so TS compiles without hard dep coupling
+interface DbHandle {
+  getRuns(): RunRow[];
+  getRun(id: string): RunRow | undefined;
+  getTestResults(runId: string): TestResultRow[];
+  getProjectPaths(): string[];
+  close(): void;
+  raw: unknown; // for passing to aggregators
+}
+
+function normalizeRunReal(r: RunRowReal): RunRow {
+  return {
+    id: String(r.id),
+    tool: r.tool_name ?? '',
+    projectPath: r.project_path ?? null,
+    startedAt: r.started_at,
+    completedAt: r.completed_at ?? null,
+    status: r.status ?? 'in-progress',
+    errorCode: r.error_code ?? null,
+    durationMs: null,
+  };
+}
+
+function normalizeRunLegacy(r: RunRowLegacy): RunRow {
+  // Map old 'outcome' field → status
+  let status = (r.outcome ?? 'in-progress').toLowerCase();
+  if (status === 'ok') status = 'ok';
+  return {
+    id: String(r.id),
+    tool: (r as RunRowLegacy).tool ?? '',
+    projectPath: null,
+    startedAt: r.started_at,
+    completedAt: (r as RunRowLegacy).ended_at ?? null,
+    status,
+    errorCode: r.error_code ?? null,
+    durationMs: (r as RunRowLegacy).duration_ms ?? null,
+  };
+}
+
+async function openSqlite(dbFilePath: string): Promise<DbHandle> {
   const { default: Database } = await import('better-sqlite3') as { default: typeof import('better-sqlite3') };
 
   if (!fs.existsSync(dbFilePath)) {
-    // Return empty stub — no data yet
     return {
       getRuns: () => [],
       getRun: () => undefined,
       getTestResults: () => [],
+      getProjectPaths: () => [],
       close: () => undefined,
+      raw: null,
     };
   }
 
   const db = new Database(dbFilePath, { readonly: true, fileMustExist: true });
-  // WAL pragma is a no-op on readonly connections — skip it
+
+  // Detect which schema we have
+  const hasRealSchema = (() => {
+    try {
+      const info = db.prepare(`PRAGMA table_info(runs)`).all() as Array<{ name: string }>;
+      return info.some((c) => c.name === 'tool_name');
+    } catch {
+      return false;
+    }
+  })();
+
+  const hasLegacySchema = !hasRealSchema;
 
   return {
     getRuns(): RunRow[] {
       try {
-        return db.prepare<[], RunRow>(
-          `SELECT * FROM runs ORDER BY id DESC LIMIT 500`,
-        ).all();
+        if (hasRealSchema) {
+          const rows = db.prepare<[], RunRowReal>(
+            `SELECT * FROM runs ORDER BY started_at DESC LIMIT 500`,
+          ).all();
+          return rows.map(normalizeRunReal);
+        } else {
+          const rows = db.prepare<[], RunRowLegacy>(
+            `SELECT * FROM runs ORDER BY id DESC LIMIT 500`,
+          ).all();
+          return rows.map(normalizeRunLegacy);
+        }
       } catch {
         return [];
       }
     },
-    getRun(id: number): RunRow | undefined {
+    getRun(id: string): RunRow | undefined {
       try {
-        return db.prepare<[number], RunRow>(`SELECT * FROM runs WHERE id = ?`).get(id);
+        if (hasRealSchema) {
+          const r = db.prepare<[string], RunRowReal>(`SELECT * FROM runs WHERE id = ?`).get(id);
+          return r ? normalizeRunReal(r) : undefined;
+        } else {
+          const numId = parseInt(id, 10);
+          if (isNaN(numId)) return undefined;
+          const r = db.prepare<[number], RunRowLegacy>(`SELECT * FROM runs WHERE id = ?`).get(numId);
+          return r ? normalizeRunLegacy(r) : undefined;
+        }
       } catch {
         return undefined;
       }
     },
-    getTestResults(runId: number): TestResultRow[] {
+    getTestResults(runId: string): TestResultRow[] {
       try {
-        return db.prepare<[number], TestResultRow>(
-          `SELECT * FROM test_results WHERE run_id = ?`,
-        ).all(runId);
+        if (hasRealSchema) {
+          return db.prepare<[string], {
+            id: string; run_id: string; test_id: string; test_name: string;
+            test_file: string; test_type: string; status: string;
+            error_message: string | null; duration_ms: number | null;
+            suggested_fix_region: string | null; suggested_patch: string | null;
+          }>(`SELECT * FROM test_results WHERE run_id = ?`).all(runId).map((r) => ({
+            id: r.id,
+            runId: r.run_id,
+            testId: r.test_id,
+            testName: r.test_name,
+            testFile: r.test_file ?? '',
+            testType: r.test_type ?? '',
+            status: r.status,
+            errorMessage: r.error_message ?? null,
+            durationMs: r.duration_ms ?? null,
+            suggestedFixRegion: r.suggested_fix_region ?? null,
+            suggestedPatch: r.suggested_patch ?? null,
+          }));
+        } else {
+          // Legacy schema: id INTEGER, run_id INTEGER, test_id TEXT, title TEXT, outcome TEXT, stack TEXT
+          const numId = parseInt(runId, 10);
+          if (isNaN(numId)) return [];
+          return db.prepare<[number], {
+            id: number; run_id: number; test_id: string;
+            title: string | null; outcome: string | null; stack: string | null;
+          }>(`SELECT * FROM test_results WHERE run_id = ?`).all(numId).map((r) => ({
+            id: String(r.id),
+            runId: runId,
+            testId: r.test_id,
+            testName: r.title ?? r.test_id,
+            testFile: '',
+            testType: '',
+            status: r.outcome ?? 'unknown',
+            errorMessage: r.stack ?? null,
+            durationMs: null,
+            suggestedFixRegion: null,
+            suggestedPatch: null,
+          }));
+        }
+      } catch {
+        return [];
+      }
+    },
+    getProjectPaths(): string[] {
+      try {
+        if (hasRealSchema) {
+          return db.prepare<[], { project_path: string }>(
+            `SELECT DISTINCT project_path FROM runs WHERE project_path IS NOT NULL`,
+          ).all().map((r) => r.project_path);
+        }
+        return [];
       } catch {
         return [];
       }
@@ -183,239 +313,145 @@ async function openSqlite(dbFilePath: string): Promise<{
     close(): void {
       try { db.close(); } catch { /* ignore */ }
     },
+    raw: db,
   };
 }
 
-// ─── Render helpers ───────────────────────────────────────────────────────────
+// ─── File allowlist security ──────────────────────────────────────────────────
 
-function renderRunsRows(runs: RunRow[]): string {
-  if (runs.length === 0) {
-    return `<tr><td colspan="7">
-      <div class="empty">
-        <div class="empty__icon">📭</div>
-        <div class="empty__msg">No runs yet</div>
-        <div class="empty__sub">Runs appear here after you call a tspr MCP tool.</div>
-      </div>
-    </td></tr>`;
-  }
-
-  return runs.map((r) => {
-    const status = (r.outcome ?? 'in-progress').toLowerCase();
-    const runId = String(r.id);
-    const displayId = runId.length > 16 ? runId.slice(0, 16) + '…' : runId;
-    return `<tr onclick="location.href='/runs/${encodeURIComponent(runId)}'">
-      <td><span class="run-id" title="${escHtml(runId)}">${escHtml(displayId)}</span></td>
-      <td><span class="project-name">${escHtml(projectLabel(null))}</span></td>
-      <td><span class="pill ${pillClass(status)}">${pillText(status)}</span></td>
-      <td class="stats">${escHtml(r.tool.replace('tspr_', '').replace(/_/g, ' '))}</td>
-      <td class="time-cell">${escHtml(relativeTime(r.started_at))}</td>
-      <td class="time-cell">${escHtml(formatMs(r.duration_ms))}</td>
-      <td class="time-cell">${escHtml(r.error_code ?? '')}</td>
-    </tr>`;
-  }).join('\n');
+/**
+ * Build the set of allowed root directories for /api/file.
+ * Returns normalized absolute paths.
+ */
+function buildAllowlist(projectPaths: string[], extraPaths: string[]): string[] {
+  const tspr = path.join(os.homedir(), '.tspr');
+  const allowed = [tspr, ...projectPaths, ...extraPaths].map((p) =>
+    path.normalize(p).replace(/\\/g, '/'),
+  );
+  return [...new Set(allowed)];
 }
 
-function renderRunDetail(
-  run: RunRow,
-  testResults: TestResultRow[],
-  executeResult: ExecuteResultShape | null,
-): string {
-  const status = (run.outcome ?? 'in-progress').toLowerCase();
-  const runId = String(run.id);
-  const project = projectLabel(null);
+function isPathAllowed(filePath: string, allowlist: string[]): boolean {
+  const normalized = path.normalize(filePath).replace(/\\/g, '/');
+  return allowlist.some((root) => normalized.startsWith(root + '/') || normalized === root);
+}
 
-  // Status pill HTML
-  const statusPill = `<span class="pill ${pillClass(status)}">${pillText(status)}</span>`;
+// ─── Project health ───────────────────────────────────────────────────────────
 
-  // Tool label
-  const toolLabel = run.tool.replace('tspr_', '').replace(/_/g, ' ');
+interface ProjectHealth {
+  projectPath: string;
+  projectName: string;
+  lastRunId: string;
+  lastRunAt: string;
+  status: 'healthy' | 'issues' | 'broken';
+  passRate: number;
+  passingTests: number;
+  totalTests: number;
+  delta: number; // change vs previous run (passed count diff)
+  previousPassRate: number | null;
+  runCount: number;
+}
 
-  // Duration
-  const duration = formatMs(run.duration_ms);
+function computeProjectHealth(
+  projectPath: string,
+  runs: RunRow[],
+  db: DbHandle,
+): ProjectHealth {
+  const projectRuns = runs
+    .filter((r) => r.projectPath === projectPath)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 
-  // Error code meta (optional)
-  const errorCodeMeta = run.error_code
-    ? `<div class="meta-pair"><span>Error code</span><strong style="color:var(--red)">${escHtml(run.error_code)}</strong></div>`
-    : '';
+  const runCount = projectRuns.length;
+  const lastRun = projectRuns[0];
+  const prevRun = projectRuns[1];
 
-  // Stats bar — use executeResult if available, else derive from test_results rows
-  let passed = 0;
-  let failed = 0;
-  let skipped = 0;
-  let total = 0;
+  let passingTests = 0;
+  let totalTests = 0;
+  let prevPassing = 0;
+  let prevTotal = 0;
 
-  if (executeResult) {
-    passed = executeResult.passed;
-    failed = executeResult.failed;
-    skipped = executeResult.skipped;
-    total = executeResult.totalTests;
-  } else if (testResults.length > 0) {
-    for (const t of testResults) {
-      const o = (t.outcome ?? '').toLowerCase();
-      if (o === 'passed') passed++;
-      else if (o === 'failed') failed++;
-      else skipped++;
-    }
-    total = testResults.length;
+  if (lastRun) {
+    const results = db.getTestResults(lastRun.id);
+    totalTests = results.length;
+    passingTests = results.filter((r) => r.status === 'passed').length;
   }
 
-  const statsBar = total > 0
-    ? `<div class="stats-bar">
-        <div class="stat-card stat-card--total"><div class="stat-card__num">${total}</div><div class="stat-card__label">Total</div></div>
-        <div class="stat-card stat-card--ok"><div class="stat-card__num">${passed}</div><div class="stat-card__label">Passed</div></div>
-        <div class="stat-card stat-card--fail"><div class="stat-card__num">${failed}</div><div class="stat-card__label">Failed</div></div>
-        <div class="stat-card stat-card--skip"><div class="stat-card__num">${skipped}</div><div class="stat-card__label">Skipped</div></div>
-      </div>`
-    : '';
-
-  // Warnings
-  const warnings = executeResult?.warnings ?? [];
-  const warningsSection = warnings.length > 0
-    ? `<ul class="warning-list">${warnings.map((w) => `<li class="warning-item"><span>⚠</span>${escHtml(w)}</li>`).join('')}</ul>`
-    : '';
-
-  // Failures
-  const failures = executeResult?.failures ?? testResults.filter((t) => (t.outcome ?? '') === 'failed').map((t) => ({
-    testId: t.test_id,
-    title: t.title ?? t.test_id,
-    stack: t.stack ?? '',
-    suggestedFixRegion: null as null,
-  }));
-
-  const passedTests = testResults.filter((t) => (t.outcome ?? '') === 'passed');
-  const skippedTests = testResults.filter((t) => (t.outcome ?? '') !== 'passed' && (t.outcome ?? '') !== 'failed');
-
-  let testResultsSection = '';
-  if (failures.length > 0) {
-    const failureCards = failures.map((f, i) => {
-      const fix = f.suggestedFixRegion;
-      const fixHtml = fix
-        ? `<div class="fix-region"><strong>Suggested fix:</strong> ${escHtml(fix.file)} L${fix.lineStart}–${fix.lineEnd} — ${escHtml(fix.why)}</div>`
-        : '';
-      return `<div class="failure-card" id="failure-${i}">
-        <div class="failure-card__header">
-          <span class="pill pill--failed" style="flex-shrink:0">✗</span>
-          <span class="failure-card__title">${escHtml(f.title)}</span>
-          <svg class="failure-card__chevron" width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M5 2l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
-        <div class="failure-card__body">
-          <pre class="failure-stack">${escHtml(f.stack)}</pre>
-          ${fixHtml}
-        </div>
-      </div>`;
-    }).join('\n');
-
-    testResultsSection += `<div class="section">
-      <div class="section-title">Failures (${failures.length})</div>
-      <div class="failure-list">${failureCards}</div>
-    </div>`;
+  if (prevRun) {
+    const results = db.getTestResults(prevRun.id);
+    prevTotal = results.length;
+    prevPassing = results.filter((r) => r.status === 'passed').length;
   }
 
-  if (passedTests.length > 0) {
-    const items = passedTests.map((t) =>
-      `<div class="test-item test-item--passed"><span class="pill pill--ok" style="flex-shrink:0">✓</span>${escHtml(t.title ?? t.test_id)}</div>`
-    ).join('\n');
-    testResultsSection += `<div class="section">
-      <div class="section-title">Passed (${passedTests.length})</div>
-      <div class="test-list">${items}</div>
-    </div>`;
-  }
+  const passRate = totalTests > 0 ? passingTests / totalTests : 0;
+  const previousPassRate = prevTotal > 0 ? prevPassing / prevTotal : null;
+  const delta = prevRun ? passingTests - prevPassing : 0;
 
-  if (skippedTests.length > 0) {
-    const items = skippedTests.map((t) =>
-      `<div class="test-item test-item--skipped"><span class="pill pill--skipped" style="flex-shrink:0">—</span>${escHtml(t.title ?? t.test_id)}</div>`
-    ).join('\n');
-    testResultsSection += `<div class="section">
-      <div class="section-title">Skipped (${skippedTests.length})</div>
-      <div class="test-list">${items}</div>
-    </div>`;
-  }
-
-  // Raw JSON
-  const rawJson = JSON.stringify({ run, testResults, executeResult }, null, 2);
+  let status: 'healthy' | 'issues' | 'broken';
+  if (passRate >= 0.9) status = 'healthy';
+  else if (passRate >= 0.5) status = 'issues';
+  else status = 'broken';
 
   return {
-    RUN_ID: runId,
-    RUN_STATUS: status,
-    PROJECT_NAME: escHtml(project),
-    STATUS_PILL: statusPill,
-    TOOL_LABEL: escHtml(toolLabel),
-    STARTED_AT: escHtml(run.started_at),
-    DURATION: escHtml(duration),
-    ERROR_CODE_META: errorCodeMeta,
-    STATS_BAR: statsBar,
-    WARNINGS_SECTION: warningsSection,
-    TEST_RESULTS_SECTION: testResultsSection,
-    RAW_JSON: escHtml(rawJson),
-  } as unknown as string; // cast — see applyTemplate usage
+    projectPath,
+    projectName: projectLabel(projectPath),
+    lastRunId: lastRun?.id ?? '',
+    lastRunAt: lastRun?.startedAt ?? '',
+    status,
+    passRate,
+    passingTests,
+    totalTests,
+    delta,
+    previousPassRate,
+    runCount,
+  };
 }
 
-type RunDetailTemplateVars = {
-  RUN_ID: string;
-  RUN_STATUS: string;
-  PROJECT_NAME: string;
-  STATUS_PILL: string;
-  TOOL_LABEL: string;
-  STARTED_AT: string;
-  DURATION: string;
-  ERROR_CODE_META: string;
-  STATS_BAR: string;
-  WARNINGS_SECTION: string;
-  TEST_RESULTS_SECTION: string;
-  RAW_JSON: string;
-};
+// ─── Trends ──────────────────────────────────────────────────────────────────
 
-function applyTemplate(template: string, vars: Record<string, string>): string {
-  let result = template;
-  for (const [key, value] of Object.entries(vars)) {
-    // Replace all occurrences of {{KEY}}
-    result = result.split(`{{${key}}}`).join(value);
-  }
-  return result;
-}
-
-// ExecuteResult shape (from generateAndExecute.ts) — used when reading .tspr/test_results.json
-interface ExecuteResultShape {
-  status: string;
-  totalTests: number;
+interface TrendPoint {
+  date: string; // YYYY-MM-DD
+  passRate: number;
+  total: number;
   passed: number;
-  failed: number;
-  skipped: number;
-  warnings: string[];
-  failures: Array<{
-    testId: string;
-    title: string;
-    stack: string;
-    suggestedFixRegion: {
-      file: string;
-      lineStart: number;
-      lineEnd: number;
-      why: string;
-    } | null;
-  }>;
 }
 
-function tryReadExecuteResult(projectPath: string | null): ExecuteResultShape | null {
-  if (!projectPath) return null;
-  const p = path.join(projectPath, '.tspr', 'test_results.json');
-  try {
-    const raw = fs.readFileSync(p, 'utf-8');
-    return JSON.parse(raw) as ExecuteResultShape;
-  } catch {
-    return null;
+function computeTrends(
+  runs: RunRow[],
+  db: DbHandle,
+  days = 30,
+): TrendPoint[] {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const recentRuns = runs.filter((r) => r.startedAt >= cutoff && r.status !== 'in-progress');
+
+  // Group by date
+  const byDate = new Map<string, { passed: number; total: number }>();
+
+  for (const run of recentRuns) {
+    const date = run.startedAt.slice(0, 10);
+    const results = db.getTestResults(run.id);
+    if (results.length === 0) continue;
+    const existing = byDate.get(date) ?? { passed: 0, total: 0 };
+    existing.total += results.length;
+    existing.passed += results.filter((r) => r.status === 'passed').length;
+    byDate.set(date, existing);
   }
+
+  const points: TrendPoint[] = [];
+  for (const [date, stats] of byDate) {
+    points.push({
+      date,
+      passRate: stats.total > 0 ? stats.passed / stats.total : 0,
+      total: stats.total,
+      passed: stats.passed,
+    });
+  }
+
+  return points.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-// ─── HTTP handler ─────────────────────────────────────────────────────────────
+// ─── HTTP send helpers ────────────────────────────────────────────────────────
 
-function send(
-  res: http.ServerResponse,
-  status: number,
-  contentType: string,
-  body: string | Buffer,
-): void {
+function send(res: http.ServerResponse, status: number, contentType: string, body: string | Buffer): void {
   const buf = typeof body === 'string' ? Buffer.from(body, 'utf-8') : body;
   res.writeHead(status, {
     'Content-Type': contentType,
@@ -437,11 +473,22 @@ function sendNotFound(res: http.ServerResponse, msg = 'Not found'): void {
   sendJson(res, 404, { error: msg });
 }
 
-type DbHandle = Awaited<ReturnType<typeof openSqlite>>;
+// ─── Route handler ────────────────────────────────────────────────────────────
 
-function makeHandler(db: DbHandle, cssContent: string, jsContent: string, indexTemplate: string, runTemplate: string) {
+function makeHandler(
+  db: DbHandle,
+  cssContent: string,
+  jsContent: string,
+  indexTemplate: string,
+  runTemplate: string,
+  compareTemplate: string,
+  costTemplate: string,
+  extraAllowedPaths: string[],
+) {
   return function handler(req: http.IncomingMessage, res: http.ServerResponse): void {
-    const url = req.url ?? '/';
+    const rawUrl = req.url ?? '/';
+    const [urlPath, queryString] = rawUrl.split('?');
+    const params = new URLSearchParams(queryString ?? '');
     const method = req.method ?? 'GET';
 
     if (method !== 'GET' && method !== 'HEAD') {
@@ -450,70 +497,247 @@ function makeHandler(db: DbHandle, cssContent: string, jsContent: string, indexT
     }
 
     // ── Static assets ──────────────────────────────────────────────────────
-    if (url === '/style.css') {
+    if (urlPath === '/style.css') {
       send(res, 200, 'text/css; charset=utf-8', cssContent);
       return;
     }
 
-    if (url === '/app.js') {
+    if (urlPath === '/app.js') {
       send(res, 200, 'application/javascript; charset=utf-8', jsContent);
       return;
     }
 
     // ── /api/runs ──────────────────────────────────────────────────────────
-    if (url === '/api/runs' || url === '/api/runs/') {
+    if (urlPath === '/api/runs' || urlPath === '/api/runs/') {
       const runs = db.getRuns();
-      sendJson(res, 200, runs);
+      sendJson(res, 200, runs.map((r) => ({
+        id: r.id,
+        tool: r.tool,
+        project_path: r.projectPath,
+        started_at: r.startedAt,
+        completed_at: r.completedAt,
+        outcome: r.status,
+        status: r.status,
+        error_code: r.errorCode,
+        duration_ms: r.durationMs,
+      })));
       return;
     }
 
     // ── /api/runs/:runId ───────────────────────────────────────────────────
-    const apiRunMatch = url.match(/^\/api\/runs\/([^/?]+)(\?.*)?$/);
+    const apiRunMatch = urlPath.match(/^\/api\/runs\/([^/?]+)$/);
     if (apiRunMatch) {
       const runId = decodeURIComponent(apiRunMatch[1]);
-      const id = parseInt(runId, 10);
-      if (isNaN(id)) {
-        sendNotFound(res, `Invalid run id: ${runId}`);
-        return;
-      }
-      const run = db.getRun(id);
+      const run = db.getRun(runId);
       if (!run) {
         sendNotFound(res, `Run ${runId} not found`);
         return;
       }
-      const testResults = db.getTestResults(id);
-      sendJson(res, 200, { run, testResults });
+      const testResults = db.getTestResults(runId);
+      sendJson(res, 200, {
+        run: {
+          id: run.id,
+          tool: run.tool,
+          project_path: run.projectPath,
+          started_at: run.startedAt,
+          completed_at: run.completedAt,
+          outcome: run.status,
+          status: run.status,
+          error_code: run.errorCode,
+          duration_ms: run.durationMs,
+        },
+        testResults,
+      });
+      return;
+    }
+
+    // ── /api/projects ──────────────────────────────────────────────────────
+    if (urlPath === '/api/projects' || urlPath === '/api/projects/') {
+      const runs = db.getRuns();
+      // Get unique project paths
+      const projectPaths = [...new Set(
+        runs.map((r) => r.projectPath).filter((p): p is string => p != null),
+      )];
+
+      if (projectPaths.length === 0) {
+        // Fall back: group by tool if no project paths
+        sendJson(res, 200, []);
+        return;
+      }
+
+      const projects = projectPaths.map((pp) => computeProjectHealth(pp, runs, db));
+      sendJson(res, 200, projects);
+      return;
+    }
+
+    // ── /api/issues ────────────────────────────────────────────────────────
+    if (urlPath === '/api/issues' || urlPath === '/api/issues/') {
+      const runs = db.getRuns();
+      const issueDb = {
+        getRunsForIssues: () => runs.map((r) => ({
+          id: r.id,
+          project_path: r.projectPath,
+          started_at: r.startedAt,
+          status: r.status,
+        })),
+        getFailedResultsForRun: (runId: string) => {
+          const results = db.getTestResults(runId);
+          return results
+            .filter((r) => r.status === 'failed')
+            .map((r) => ({
+              test_id: r.testId,
+              test_name: r.testName,
+              error_message: r.errorMessage,
+              suggested_fix_region: r.suggestedFixRegion,
+              suggested_patch: r.suggestedPatch,
+            }));
+        },
+      };
+      const limitStr = params.get('limit');
+      const limit = limitStr ? parseInt(limitStr, 10) : 20;
+      const issues = aggregateTopIssues(issueDb, isNaN(limit) ? 20 : limit);
+      sendJson(res, 200, issues);
+      return;
+    }
+
+    // ── /api/trends ────────────────────────────────────────────────────────
+    if (urlPath === '/api/trends' || urlPath === '/api/trends/') {
+      const daysStr = params.get('days');
+      const days = daysStr ? parseInt(daysStr, 10) : 30;
+      const runs = db.getRuns();
+      const trends = computeTrends(runs, db, isNaN(days) ? 30 : days);
+      sendJson(res, 200, trends);
+      return;
+    }
+
+    // ── /api/compare ───────────────────────────────────────────────────────
+    if (urlPath === '/api/compare' || urlPath === '/api/compare/') {
+      const runA = params.get('a') ?? '';
+      const runB = params.get('b') ?? '';
+      if (!runA || !runB) {
+        sendJson(res, 400, { error: 'Both ?a= and ?b= are required' });
+        return;
+      }
+      const compareDb = {
+        getTestOutcomesForRun: (runId: string) => {
+          const results = db.getTestResults(runId);
+          return results.map((r) => ({
+            test_id: r.testId,
+            test_name: r.testName,
+            status: r.status,
+          }));
+        },
+        runExists: (runId: string) => db.getRun(runId) != null,
+      };
+      const result = compareRuns(compareDb, runA, runB);
+      sendJson(res, 200, result);
+      return;
+    }
+
+    // ── /api/file ──────────────────────────────────────────────────────────
+    if (urlPath === '/api/file' || urlPath === '/api/file/') {
+      const filePath = params.get('path');
+      if (!filePath) {
+        sendJson(res, 400, { error: '?path= is required' });
+        return;
+      }
+      // Build allowlist from project paths + ~/.tspr + extraAllowedPaths
+      const projectPaths = db.getProjectPaths();
+      const allowlist = buildAllowlist(projectPaths, extraAllowedPaths);
+
+      if (!isPathAllowed(filePath, allowlist)) {
+        sendJson(res, 403, { error: 'Path is outside allowed directories' });
+        return;
+      }
+
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        sendJson(res, 200, { path: filePath, content, lines: content.split('\n').length });
+      } catch (err) {
+        const e = err as NodeJS.ErrnoException;
+        if (e.code === 'ENOENT') {
+          sendNotFound(res, `File not found: ${filePath}`);
+        } else {
+          sendJson(res, 500, { error: `Failed to read file: ${e.message}` });
+        }
+      }
+      return;
+    }
+
+    // ── /api/stats (quick stats) ───────────────────────────────────────────
+    if (urlPath === '/api/stats' || urlPath === '/api/stats/') {
+      const runs = db.getRuns();
+      const totalRuns = runs.length;
+      let totalTestsRun = 0;
+      let totalPassed = 0;
+
+      // Sample last 50 runs for stats (avoid full scan)
+      const sampleRuns = runs.slice(0, 50);
+      for (const run of sampleRuns) {
+        const results = db.getTestResults(run.id);
+        totalTestsRun += results.length;
+        totalPassed += results.filter((r) => r.status === 'passed').length;
+      }
+
+      const avgPassRate = totalTestsRun > 0 ? totalPassed / totalTestsRun : 0;
+
+      sendJson(res, 200, {
+        totalRuns,
+        totalTestsRun,
+        avgPassRate,
+        totalSpentUsd: null, // not tracked yet
+      });
+      return;
+    }
+
+    // ── /compare page ──────────────────────────────────────────────────────
+    if (urlPath === '/compare' || urlPath === '/compare/') {
+      sendHtml(res, compareTemplate);
+      return;
+    }
+
+    // ── /cost page ─────────────────────────────────────────────────────────
+    if (urlPath === '/cost' || urlPath === '/cost/') {
+      sendHtml(res, costTemplate);
       return;
     }
 
     // ── /runs/:runId ───────────────────────────────────────────────────────
-    const runPageMatch = url.match(/^\/runs\/([^/?]+)(\?.*)?$/);
+    const runPageMatch = urlPath.match(/^\/runs\/([^/?]+)$/);
     if (runPageMatch) {
       const runId = decodeURIComponent(runPageMatch[1]);
-      const id = parseInt(runId, 10);
-      if (isNaN(id)) {
-        sendNotFound(res, `Invalid run id: ${runId}`);
-        return;
-      }
-      const run = db.getRun(id);
+      const run = db.getRun(runId);
       if (!run) {
         sendNotFound(res, `Run ${runId} not found`);
         return;
       }
-      const testResults = db.getTestResults(id);
-      const executeResult = tryReadExecuteResult(null); // project path not stored on run row in this schema
-      const vars = renderRunDetail(run, testResults, executeResult) as unknown as RunDetailTemplateVars;
-      const html = applyTemplate(runTemplate, vars as unknown as Record<string, string>);
+      const testResults = db.getTestResults(runId);
+      const runJson = JSON.stringify({
+        id: run.id,
+        tool: run.tool,
+        projectPath: run.projectPath,
+        startedAt: run.startedAt,
+        completedAt: run.completedAt,
+        status: run.status,
+        errorCode: run.errorCode,
+        durationMs: run.durationMs,
+      });
+      const html = applyTemplate(runTemplate, {
+        RUN_ID: escHtml(run.id),
+        RUN_STATUS: escHtml(run.status),
+        PROJECT_NAME: escHtml(projectLabel(run.projectPath)),
+        RUN_JSON: escHtml(runJson),
+        TEST_RESULTS_JSON: escHtml(JSON.stringify(testResults)),
+      });
       sendHtml(res, html);
       return;
     }
 
     // ── /artifacts/:runId/:file ────────────────────────────────────────────
-    const artifactMatch = url.match(/^\/artifacts\/([^/]+)\/(.+)$/);
+    const artifactMatch = urlPath.match(/^\/artifacts\/([^/]+)\/(.+)$/);
     if (artifactMatch) {
       const runId = decodeURIComponent(artifactMatch[1]);
       const fileName = decodeURIComponent(artifactMatch[2]);
-      // Sanitize: no path traversal
       const safeName = path.basename(fileName);
       const artifactPath = path.join(os.homedir(), '.tspr', 'runs', runId, safeName);
       try {
@@ -536,14 +760,8 @@ function makeHandler(db: DbHandle, cssContent: string, jsContent: string, indexT
     }
 
     // ── / (home) ───────────────────────────────────────────────────────────
-    if (url === '/' || url === '/index.html') {
-      const runs = db.getRuns();
-      const runsRows = renderRunsRows(runs);
-      const html = applyTemplate(indexTemplate, {
-        RUNS_JSON: JSON.stringify(runs),
-        RUNS_ROWS: runsRows,
-      });
-      sendHtml(res, html);
+    if (urlPath === '/' || urlPath === '/index.html') {
+      sendHtml(res, indexTemplate);
       return;
     }
 
@@ -573,33 +791,39 @@ function openBrowser(url: string): void {
     const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
     child.unref();
   } catch {
-    // Best-effort — ignore if open fails
+    // Best-effort
   }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-/**
- * Start the tspr local web dashboard server.
- *
- * @returns Promise resolving to { url, close } once server is listening.
- */
 export async function startDashboard(opts?: DashboardOptions): Promise<DashboardHandle> {
   const port = opts?.port ?? 7654;
   const host = opts?.host ?? '127.0.0.1';
   const shouldOpen = opts?.open ?? true;
   const dbFilePath = opts?.dbPath ?? path.join(os.homedir(), '.tspr', 'db.sqlite');
+  const extraAllowedPaths = opts?.extraAllowedPaths ?? [];
 
   // Load static assets at startup (fail fast if missing)
   const cssContent = readUiFile('style.css');
   const jsContent = readUiFile('app.js');
   const indexTemplate = readUiFile('index.html');
   const runTemplate = readUiFile('run.html');
+  const compareTemplate = readUiFile('compare.html');
+  const costTemplate = readUiFile('cost.html');
 
-  // Open SQLite (read-only; stub if DB missing)
   const db = await openSqlite(dbFilePath);
 
-  const handler = makeHandler(db, cssContent, jsContent, indexTemplate, runTemplate);
+  const handler = makeHandler(
+    db,
+    cssContent,
+    jsContent,
+    indexTemplate,
+    runTemplate,
+    compareTemplate,
+    costTemplate,
+    extraAllowedPaths,
+  );
   const server = http.createServer(handler);
 
   await new Promise<void>((resolve, reject) => {
@@ -626,3 +850,6 @@ export async function startDashboard(opts?: DashboardOptions): Promise<Dashboard
     },
   };
 }
+
+// Export helpers for testing
+export { isPathAllowed, buildAllowlist };

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tspr — compare runs</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <a class="topbar__brand" href="/">tspr<span>/dashboard</span></a>
+  <nav class="topbar__nav">
+    <a href="/">Overview</a>
+    <a href="/compare" class="active">Compare</a>
+    <a href="/cost">Cost</a>
+  </nav>
+</header>
+
+<main class="page">
+  <div class="section-header">Compare Runs</div>
+
+  <div class="compare-controls">
+    <label>
+      Run A (before / older)
+      <input type="text" id="run-a-input" placeholder="run id…" autocomplete="off" />
+    </label>
+    <label>
+      Run B (after / newer)
+      <input type="text" id="run-b-input" placeholder="run id…" autocomplete="off" />
+    </label>
+    <button class="btn btn--accent" id="compare-btn">Compare</button>
+  </div>
+
+  <!-- Recent runs quick-picker -->
+  <div id="recent-runs-section">
+    <div class="section-title">Recent runs — click to fill</div>
+    <div class="card">
+      <table class="runs-table">
+        <thead>
+          <tr>
+            <th>Run ID</th>
+            <th>Project</th>
+            <th>Status</th>
+            <th>Started</th>
+            <th>Use as A</th>
+            <th>Use as B</th>
+          </tr>
+        </thead>
+        <tbody id="recent-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="compare-results" style="display:none; margin-top:1.5rem">
+    <div class="section-header" id="compare-summary"></div>
+    <div class="compare-grid">
+      <div class="compare-col compare-col--fixed">
+        <div class="compare-col__label" id="fixed-label">Fixed (0)</div>
+        <div id="fixed-list"></div>
+      </div>
+      <div class="compare-col compare-col--new">
+        <div class="compare-col__label" id="new-label">New failures (0)</div>
+        <div id="new-list"></div>
+      </div>
+      <div class="compare-col compare-col--still">
+        <div class="compare-col__label" id="still-label">Still failing (0)</div>
+        <div id="still-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="compare-error" style="display:none" class="empty-state">
+    <div class="empty-state__heading" id="compare-error-msg">Error</div>
+  </div>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
