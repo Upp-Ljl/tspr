@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tspr dashboard</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <a class="topbar__brand" href="/">tspr<span>/dashboard</span></a>
+  <div class="topbar__controls">
+    <input
+      id="search-input"
+      class="topbar__search"
+      type="search"
+      placeholder="Search project, run id, tool…"
+      autocomplete="off"
+    />
+    <button class="filter-btn active" data-filter="all">All</button>
+    <button class="filter-btn" data-filter="passing">Passing</button>
+    <button class="filter-btn" data-filter="failing">Failing</button>
+    <button class="filter-btn" data-filter="partial">Partial</button>
+    <span class="poll-dot" title="Live updates every 5s"></span>
+  </div>
+</header>
+
+<main class="page">
+  <div class="page__title">Runs — newest first</div>
+  <div class="card">
+    <table class="runs-table">
+      <thead>
+        <tr>
+          <th>Run ID</th>
+          <th>Project</th>
+          <th>Status</th>
+          <th>Tool</th>
+          <th>Started</th>
+          <th>Duration</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody id="runs-body">
+        <!-- Rows injected by JS or pre-rendered via {{RUNS_ROWS}} -->
+        {{RUNS_ROWS}}
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+// Inline initial data to avoid a round-trip
+window.__RUNS__ = {{RUNS_JSON}};
+</script>
+<script src="/app.js"></script>
+</body>
+</html>
