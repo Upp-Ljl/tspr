@@ -117,7 +117,7 @@ export class OpenAICompatProvider implements CcProvider {
   constructor(cfg: OpenAICompatConfig = {}) {
     this.baseURL = (cfg.baseURL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
     this.apiKeyEnv = cfg.apiKeyEnv ?? 'OPENAI_API_KEY';
-    this.defaultTimeoutMs = cfg.defaultTimeoutMs ?? 60_000;
+    this.defaultTimeoutMs = cfg.defaultTimeoutMs ?? 120_000;
     const defaults = cfg.modelAliasDefaults ?? OPENAI_COMPAT_DEFAULTS;
     this.modelAliases = {
       ...defaults,

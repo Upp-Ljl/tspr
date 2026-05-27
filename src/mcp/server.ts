@@ -173,13 +173,18 @@ function initDb(logger: Logger): Db {
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id   TEXT NOT NULL UNIQUE,
-      project_path TEXT NOT NULL,
-      local_port   INTEGER NOT NULL,
-      type         TEXT NOT NULL,
-      created_at   TEXT NOT NULL
+      id                 TEXT PRIMARY KEY,
+      project_path       TEXT NOT NULL,
+      local_port         INTEGER NOT NULL DEFAULT 5173,
+      type               TEXT NOT NULL CHECK(type IN ('frontend','backend')),
+      test_scope         TEXT NOT NULL CHECK(test_scope IN ('codebase','diff')),
+      detected_framework TEXT NOT NULL DEFAULT '',
+      created_at         TEXT NOT NULL,
+      updated_at         TEXT NOT NULL
     );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_project_path
+      ON sessions (project_path);
   `);
 
   logger.info('SQLite initialized', { path: dbPath });
