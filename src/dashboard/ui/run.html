@@ -3,71 +3,46 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>tspr — run detail</title>
+  <title>tspr — Run #{{RUN_ID}}</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
 
 <header class="topbar">
   <a class="topbar__brand" href="/">tspr<span>/dashboard</span></a>
+  <nav class="topbar__nav">
+    <a href="/">Overview</a>
+    <a href="/compare">Compare</a>
+    <a href="/cost">Cost</a>
+  </nav>
 </header>
 
-<main class="page">
+<main class="page" id="run-page">
   <a class="back-link" href="/">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
       <path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
-    All runs
+    All projects
   </a>
 
-  <!-- Detail root: data-run-id and data-status set by server template substitution -->
-  <div id="detail-root" data-run-id="{{RUN_ID}}" data-status="{{RUN_STATUS}}">
-
-    <div class="detail-header">
-      <div class="detail-header__main">
-        <div class="detail-header__run-id">Run #{{RUN_ID}}</div>
-        <div class="detail-header__project">{{PROJECT_NAME}}</div>
-        <div class="detail-header__meta">
-          <div class="meta-pair">
-            <span>Status</span>
-            <strong>{{STATUS_PILL}}</strong>
-          </div>
-          <div class="meta-pair">
-            <span>Tool</span>
-            <strong>{{TOOL_LABEL}}</strong>
-          </div>
-          <div class="meta-pair">
-            <span>Started</span>
-            <strong>{{STARTED_AT}}</strong>
-          </div>
-          <div class="meta-pair">
-            <span>Duration</span>
-            <strong>{{DURATION}}</strong>
-          </div>
-          {{ERROR_CODE_META}}
-        </div>
-      </div>
-    </div>
-
-    <!-- Stats bar (populated from test_results if present) -->
-    {{STATS_BAR}}
-
-    <!-- Warnings -->
-    {{WARNINGS_SECTION}}
-
-    <!-- Test results: failures first, then passed/skipped -->
-    {{TEST_RESULTS_SECTION}}
-
-    <!-- Raw JSON fallback -->
-    <div class="section">
-      <div class="section-title">Raw run data</div>
-      <div class="card">
-        <pre style="padding:1rem;font-size:0.72rem;overflow-x:auto;font-family:var(--font-mono)">{{RAW_JSON}}</pre>
-      </div>
-    </div>
-
-  </div><!-- #detail-root -->
+  <!-- Hydrated by JS from inline data -->
+  <div id="run-root"
+    data-run-id="{{RUN_ID}}"
+    data-status="{{RUN_STATUS}}"
+    data-run="{{RUN_JSON}}"
+    data-results="{{TEST_RESULTS_JSON}}">
+  </div>
 </main>
+
+<!-- Side panel for test detail + code viewer -->
+<div class="side-panel__overlay" id="panel-overlay"></div>
+<aside class="side-panel" id="side-panel">
+  <div class="side-panel__header">
+    <div class="side-panel__title" id="panel-title">Test detail</div>
+    <button class="side-panel__close" id="panel-close" aria-label="Close">✕</button>
+  </div>
+  <div class="side-panel__body" id="panel-body"></div>
+</aside>
 
 <script src="/app.js"></script>
 </body>

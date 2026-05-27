@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tspr — cost dashboard</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <a class="topbar__brand" href="/">tspr<span>/dashboard</span></a>
+  <nav class="topbar__nav">
+    <a href="/">Overview</a>
+    <a href="/compare">Compare</a>
+    <a href="/cost" class="active">Cost</a>
+  </nav>
+</header>
+
+<main class="page">
+  <div class="section-header">Token &amp; Cost Dashboard</div>
+
+  <!-- Quick stats -->
+  <div class="stats-row" id="cost-stats-row" style="margin-bottom:1.5rem">
+    <div class="stat-tile"><div class="stat-tile__num" id="cost-total">—</div><div class="stat-tile__label">Total Runs</div></div>
+    <div class="stat-tile"><div class="stat-tile__num" id="cost-avg-pass">—</div><div class="stat-tile__label">Avg Pass Rate</div></div>
+    <div class="stat-tile"><div class="stat-tile__num" id="cost-tests">—</div><div class="stat-tile__label">Tests Sampled</div></div>
+    <div class="stat-tile"><div class="stat-tile__num" id="cost-forecast">—</div><div class="stat-tile__label">Cost Tracking</div></div>
+  </div>
+
+  <!-- Daily activity bar chart (inline SVG, built from /api/trends) -->
+  <div class="cost-section">
+    <div class="section-title">Daily test activity — last 30 days</div>
+    <div id="daily-chart" class="card" style="padding:1rem 1.25rem"></div>
+  </div>
+
+  <!-- Per-project breakdown -->
+  <div class="cost-section">
+    <div class="section-title">Per-project activity</div>
+    <div class="card">
+      <table class="runs-table">
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>Runs</th>
+            <th>Tests</th>
+            <th>Pass rate</th>
+            <th>Last run</th>
+          </tr>
+        </thead>
+        <tbody id="project-cost-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Note on cost tracking -->
+  <div class="empty-state" style="margin-top:1rem; padding:1rem 1.25rem; text-align:left">
+    <div class="empty-state__heading">Cost tracking note</div>
+    <div class="empty-state__desc">
+      Per-run dollar cost is not yet tracked in the tspr database schema.
+      This view shows activity (runs + pass rates) as a proxy for usage.
+      Token cost tracking will be added in a future version.
+    </div>
+  </div>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
