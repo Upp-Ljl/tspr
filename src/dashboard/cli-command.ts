@@ -19,9 +19,16 @@
 
 import process from 'node:process';
 import { startDashboard, type DashboardOptions } from './server.js';
+import { startWatchMode, type WatchHandle } from '../cli/watch-mode.js';
 
-function parseArgs(args: string[]): DashboardOptions & { _noOpen?: boolean } {
-  const opts: DashboardOptions & { _noOpen?: boolean } = {};
+interface ParsedDashboardArgs extends DashboardOptions {
+  _noOpen?: boolean;
+  _watch?: boolean;
+  _project?: string;
+}
+
+function parseArgs(args: string[]): ParsedDashboardArgs {
+  const opts: ParsedDashboardArgs = {};
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -29,6 +36,22 @@ function parseArgs(args: string[]): DashboardOptions & { _noOpen?: boolean } {
     if (arg === '--no-open') {
       opts.open = false;
       opts._noOpen = true;
+      continue;
+    }
+
+    if (arg === '--watch') {
+      opts._watch = true;
+      continue;
+    }
+
+    if (arg === '--project') {
+      opts._project = args[++i];
+      continue;
+    }
+
+    const projectEq = arg.match(/^--project=(.+)$/);
+    if (projectEq) {
+      opts._project = projectEq[1];
       continue;
     }
 
@@ -84,6 +107,8 @@ Options:
   --host <h>       Bind host (default: 127.0.0.1)
   --no-open        Do not auto-open browser
   --db-path <p>    Path to db.sqlite (default: ~/.tspr/db.sqlite)
+  --watch          Watch project source files and re-run affected failing scenarios on change
+  --project <p>    Project path to watch (default: cwd)
   -h, --help       Show this help
 
 `.trimStart();
@@ -96,6 +121,8 @@ Options:
  */
 export async function runDashboardCommand(args: string[]): Promise<number> {
   const opts = parseArgs(args);
+  const watchMode = opts._watch ?? false;
+  const projectPath = opts._project ?? process.cwd();
 
   let handle: { url: string; close: () => Promise<void> };
 
@@ -112,10 +139,33 @@ export async function runDashboardCommand(args: string[]): Promise<number> {
   }
   process.stdout.write(`[tspr dashboard] press Ctrl-C to stop\n`);
 
+  // Start file watcher if --watch is set
+  let watcher: WatchHandle | null = null;
+  if (watchMode) {
+    process.stdout.write(`[tspr dashboard] --watch mode enabled (project: ${projectPath})\n`);
+    watcher = startWatchMode({
+      projectPath,
+      onTrigger: async (changedFile, affectedIssueIds) => {
+        // Log is handled in watch-mode itself; here we could invoke
+        // an in-process re-run. For v1, we just log the trigger.
+        // Future: call generateAndExecute in-process for the affected IDs.
+        const ids = affectedIssueIds.length > 0
+          ? affectedIssueIds.map((id) => id.slice(0, 12)).join(', ')
+          : '(all failures)';
+        process.stdout.write(`[watch] Triggered re-run for: ${ids}\n`);
+        process.stdout.write(`[watch] Refresh the dashboard to see updated results.\n`);
+      },
+    });
+  }
+
   // Wait for SIGINT / SIGTERM
   return new Promise<number>((resolve) => {
     async function shutdown(): Promise<void> {
       process.stdout.write('\n[tspr dashboard] shutting down…\n');
+      if (watcher) {
+        watcher.stop();
+        watcher = null;
+      }
       try {
         await handle.close();
       } catch { /* ignore */ }

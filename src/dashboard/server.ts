@@ -38,6 +38,7 @@ import { spawn } from 'node:child_process';
 import { aggregateTopIssues } from './issues.js';
 import { compareRuns } from './compare.js';
 import { applyPatch, pushPr, mergeLocal, GitOpsError } from '../git-ops/index.js';
+import { buildVscodeUrl, openInEditor } from '../cli/open-in-editor.js';
 
 // ─── public interface ─────────────────────────────────────────────────────────
 
@@ -486,6 +487,7 @@ function handlePost(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   urlPath: string,
+  queryParams: URLSearchParams,
   db: DbHandle,
   extraAllowedPaths: string[],
   readBody: (req: http.IncomingMessage) => Promise<string>,
@@ -622,6 +624,16 @@ function handlePost(
         return;
       }
 
+      // Safety gate: require ?confirm=true to prevent accidental pushes
+      if (!dryRun && queryParams.get('confirm') !== 'true') {
+        sendJson(res, 200, {
+          requiresConfirm: true,
+          message: 'Add ?confirm=true to the request URL to proceed with the real push.',
+          branch: branchParam,
+        });
+        return;
+      }
+
       try {
         const result = await pushPr({ projectPath, branch: branchParam, base, title, opts: { dryRun } });
         sendJson(res, 200, result);
@@ -654,6 +666,16 @@ function handlePost(
         return;
       }
 
+      // Safety gate: require ?confirm=true to prevent accidental merges
+      if (!dryRun && queryParams.get('confirm') !== 'true') {
+        sendJson(res, 200, {
+          requiresConfirm: true,
+          message: 'Add ?confirm=true to the request URL to proceed with the real merge.',
+          branch: branchParam,
+        });
+        return;
+      }
+
       try {
         const result = await mergeLocal({ projectPath, branch: branchParam, base, opts: { dryRun } });
         sendJson(res, 200, result);
@@ -664,6 +686,23 @@ function handlePost(
           sendJson(res, 500, { error: String(err) });
         }
       }
+      return;
+    }
+
+    // ── POST /api/open-in-editor ───────────────────────────────────────────
+    if (urlPath === '/api/open-in-editor') {
+      const file = String(body.file ?? '');
+      const line = typeof body.line === 'number' ? body.line : parseInt(String(body.line ?? '1'), 10);
+
+      if (!file) {
+        sendJson(res, 400, { error: 'file is required' });
+        return;
+      }
+
+      const lineNum = isNaN(line) ? 1 : Math.max(1, line);
+      const url = buildVscodeUrl(file, lineNum);
+      const opened = await openInEditor(url, { silent: true });
+      sendJson(res, 200, { opened, url });
       return;
     }
 
@@ -760,7 +799,7 @@ function makeHandler(
 
     // ── POST routes (new: local-advantage) ────────────────────────────────
     if (method === 'POST') {
-      handlePost(req, res, urlPath, db, extraAllowedPaths, readBody);
+      handlePost(req, res, urlPath, params, db, extraAllowedPaths, readBody);
       return;
     }
 
