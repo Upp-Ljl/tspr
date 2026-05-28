@@ -3,7 +3,16 @@
  *
  * Markdown formatter for tspr PR comment bot.
  * Pure function — no I/O, no subprocess calls.
+ *
+ * Produces a TestSprite-style PR comment:
+ * - Compact status header (not 8-column table)
+ * - Full scenario list with ✅/❌ per row + severity badge
+ * - Failures section with file:line, Fix hint, full patch diff embedded
+ * - Single dashboard/report link at footer
  */
+
+import { computeSeverity } from '../lib/severity.js';
+import { relativizeFilePath } from '../tools/generateAndExecute.js';
 
 export interface FormatCommentInput {
   runId: string;
@@ -17,10 +26,20 @@ export interface FormatCommentInput {
   status: 'ok' | 'partial' | 'all-failed';
   failures: Array<{
     testId: string;
+    /** Stable 16-char hex issue ID */
+    issueId?: string;
     title: string;
     stack?: string;
     suggestedFixRegion?: { file: string; lineStart: number; lineEnd: number; why: string };
     suggestedPatch?: string;
+  }>;
+  /** Full scenario list from test plan (for Scenarios section). Optional. */
+  scenarios?: Array<{
+    id: string;
+    title?: string | null;
+    endpoint?: string | null;
+    description?: string | null;
+    type?: string | null;
   }>;
   dashboardUrl?: string;   // e.g. http://localhost:7654/runs/<runId>
   reportUrl?: string;      // e.g. file:///.../report.html
@@ -28,10 +47,10 @@ export interface FormatCommentInput {
   modelId?: string;
 }
 
-const STATUS_PILL: Record<FormatCommentInput['status'], string> = {
-  ok: '✅ ok',
+const STATUS_LABEL: Record<FormatCommentInput['status'], string> = {
+  ok: '✅ all passed',
   partial: '⚠️ partial',
-  'all-failed': '❌ all-failed',
+  'all-failed': '❌ all failed',
 };
 
 function formatDuration(ms: number): string {
@@ -49,31 +68,6 @@ function formatDate(d: Date | string): string {
   return dt.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
 }
 
-function extractFileLocation(
-  fixRegion?: { file: string; lineStart: number; lineEnd: number; why: string },
-  stack?: string,
-): string | undefined {
-  if (fixRegion) {
-    return `${fixRegion.file}:${fixRegion.lineStart}`;
-  }
-  // Try to extract file:line from stack trace — first non-node_modules line
-  if (stack) {
-    const lines = stack.split('\n');
-    for (const line of lines) {
-      const m = line.match(/at\s+.*\((.+):(\d+):\d+\)/);
-      if (m && !m[1].includes('node_modules')) {
-        return `${m[1]}:${m[2]}`;
-      }
-      // Also try bare "at file:line:col" form
-      const m2 = line.match(/at\s+((?!\[).+):(\d+):\d+$/);
-      if (m2 && !m2[1].includes('node_modules')) {
-        return `${m2[1]}:${m2[2]}`;
-      }
-    }
-  }
-  return undefined;
-}
-
 const MAX_INLINE_FAILURES = 5;
 
 export function formatPrComment(input: FormatCommentInput): string {
@@ -88,34 +82,56 @@ export function formatPrComment(input: FormatCommentInput): string {
     skipped,
     status,
     failures,
+    scenarios,
     dashboardUrl,
     reportUrl,
     provider,
     modelId,
   } = input;
 
-  const pill = STATUS_PILL[status] ?? status;
+  const statusLabel = STATUS_LABEL[status] ?? status;
   const modelLabel = [provider, modelId].filter(Boolean).join('/') || '—';
   const durationLabel = formatDuration(durationMs);
-  const shortRunId = runId.length > 12 ? runId.slice(0, 12) + '…' : runId;
+  const shortRunId = runId.length > 8 ? runId.slice(0, 8) : runId;
+  const skipPart = skipped > 0 ? ` · ${skipped} skipped` : '';
 
   const lines: string[] = [];
 
-  // Header
-  lines.push(`## 🤖 tspr report · status: ${pill}`);
+  // ── Header ──────────────────────────────────────────────────────────────────
+  lines.push(`## tspr · ${statusLabel}`);
+  lines.push('');
+  lines.push(
+    `**${projectName}** · ${passed} pass · ${failed} fail${skipPart} · ${durationLabel} · ${modelLabel} · runId \`${shortRunId}\``,
+  );
   lines.push('');
   lines.push(`_Run started: ${formatDate(startedAt)}_`);
   lines.push('');
 
-  // Summary table (8 columns)
-  lines.push('| Project | Run | Total | Pass | Fail | Skip | Duration | Model |');
-  lines.push('|---|---|---|---|---|---|---|---|');
-  lines.push(
-    `| ${projectName} | \`${shortRunId}\` | ${totalTests} | ${passed} | ${failed} | ${skipped} | ${durationLabel} | ${modelLabel} |`,
-  );
-  lines.push('');
+  // ── Scenarios list ───────────────────────────────────────────────────────────
+  const failureByTestId = new Map(failures.map((f) => [f.testId, f]));
 
-  // Failures section — always emitted, even when failed=0
+  if (scenarios && scenarios.length > 0) {
+    lines.push('### Scenarios');
+    lines.push('');
+
+    for (const scenario of scenarios) {
+      const failure = failureByTestId.get(scenario.id);
+      const isPassed = !failure;
+      const icon = isPassed ? '✅' : '❌';
+      const badge = computeSeverity({ type: scenario.type });
+      const displayTitle =
+        scenario.title ||
+        scenario.endpoint ||
+        scenario.description ||
+        scenario.id;
+
+      lines.push(`- ${icon} \`${badge}\` ${displayTitle}`);
+    }
+
+    lines.push('');
+  }
+
+  // ── Failures section ─────────────────────────────────────────────────────────
   if (failed === 0) {
     lines.push('### ✅ No failures');
     lines.push('');
@@ -128,24 +144,43 @@ export function formatPrComment(input: FormatCommentInput): string {
 
     for (let i = 0; i < inlineCount; i++) {
       const f = failures[i];
-      const idx = i + 1;
 
-      // Shorten title for heading
-      const title = f.title.length > 80 ? f.title.slice(0, 77) + '…' : f.title;
-      lines.push(`#### ${idx}. \`${title}\``);
+      // Severity badge from matched scenario or default Major
+      const matchedScenario = scenarios?.find((s) => s.id === f.testId);
+      const badge = computeSeverity({ type: matchedScenario?.type });
+      const shortIssueId = f.issueId ? f.issueId.slice(0, 4) : String(i + 1).padStart(4, '0');
 
-      const loc = extractFileLocation(f.suggestedFixRegion, f.stack);
+      // Title — truncated for readability
+      const displayTitle = f.title.length > 80 ? f.title.slice(0, 77) + '…' : f.title;
+
+      lines.push(`#### ❌ issue-${shortIssueId} · \`${badge}\` ${displayTitle}`);
+      lines.push('');
+
+      // File:line
+      const loc = f.suggestedFixRegion
+        ? `${relativizeFilePath(f.suggestedFixRegion.file)}:${f.suggestedFixRegion.lineStart}`
+        : extractFileFromStack(f.stack);
       if (loc) {
-        lines.push(`- **file:** \`${loc}\``);
+        lines.push(`- **File:** \`${loc}\``);
       }
 
+      // Fix hint (why, truncated)
       if (f.suggestedFixRegion?.why) {
-        lines.push(`- **why:** ${f.suggestedFixRegion.why}`);
+        const why = f.suggestedFixRegion.why.length > 120
+          ? f.suggestedFixRegion.why.slice(0, 117) + '…'
+          : f.suggestedFixRegion.why;
+        lines.push(`- **Fix:** ${why}`);
       }
 
+      // Apply hint
+      if (f.issueId) {
+        lines.push(`- **Apply:** \`tspr apply-fix ${f.issueId.slice(0, 4)}\` (or say "apply tspr fix ${f.issueId.slice(0, 4)}")`);
+      }
+
+      // Stack trace — collapsed
       if (f.stack) {
-        // Show first 3 lines of stack
-        const stackLines = f.stack.split('\n').slice(0, 3).join('\n');
+        const stackLines = f.stack.split('\n').slice(0, 4).join('\n');
+        lines.push('');
         lines.push('<details>');
         lines.push('<summary>Stack trace</summary>');
         lines.push('');
@@ -155,14 +190,16 @@ export function formatPrComment(input: FormatCommentInput): string {
         lines.push('</details>');
       }
 
+      // Suggested patch diff — embedded inline (PR comment is more verbose than chat)
       if (f.suggestedPatch) {
-        lines.push('- **suggested patch:**');
-        lines.push('  ```diff');
-        // Indent each line of the patch
-        for (const patchLine of f.suggestedPatch.split('\n')) {
-          lines.push('  ' + patchLine);
-        }
-        lines.push('  ```');
+        lines.push('');
+        lines.push('<details>');
+        lines.push('<summary>Suggested patch</summary>');
+        lines.push('');
+        lines.push('```diff');
+        lines.push(f.suggestedPatch);
+        lines.push('```');
+        lines.push('</details>');
       }
 
       lines.push('');
@@ -174,19 +211,38 @@ export function formatPrComment(input: FormatCommentInput): string {
           ? `[full report ↗](${dashboardUrl})`
           : reportUrl
             ? `[full report ↗](${reportUrl})`
-            : 'the full report';
+            : 'the dashboard';
       lines.push(`_… and ${overflow} more — see ${reportLink}_`);
       lines.push('');
     }
   }
 
-  // Report link footer
+  // ── Footer ───────────────────────────────────────────────────────────────────
   const linkUrl = dashboardUrl ?? reportUrl;
   if (linkUrl) {
-    lines.push(`---`);
+    lines.push('---');
     lines.push(`[Full report ↗](${linkUrl})`);
     lines.push('');
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Extract file:line from a stack trace string.
+ * Returns the first non-node_modules line in `at file:line:col` format.
+ */
+function extractFileFromStack(stack?: string): string | undefined {
+  if (!stack) return undefined;
+  for (const line of stack.split('\n')) {
+    const m = line.match(/at\s+.*\((.+):(\d+):\d+\)/);
+    if (m && !m[1].includes('node_modules') && !m[1].includes('tspr-runtime')) {
+      return `${m[1]}:${m[2]}`;
+    }
+    const m2 = line.match(/at\s+((?!\[).+):(\d+):\d+$/);
+    if (m2 && !m2[1].includes('node_modules') && !m2[1].includes('tspr-runtime')) {
+      return `${m2[1]}:${m2[2]}`;
+    }
+  }
+  return undefined;
 }

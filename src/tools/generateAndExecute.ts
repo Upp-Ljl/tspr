@@ -9,12 +9,13 @@ import { z } from 'zod';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import * as os from 'node:os';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolResult, ServerContext } from '../types/mcp.js';
 import { createSandbox, SandboxError } from '../sandbox/index.js';
 import { renderHtmlReport } from '../report/html-renderer.js';
 import { computeStableIssueId } from '../dashboard/issues.js';
+import { computeSeverity } from '../lib/severity.js';
+import { resolveTitle } from '../lib/scenario-title.js';
 
 export const generateAndExecuteInputSchema = z.object({
   projectName: z.string(),
@@ -92,7 +93,43 @@ function computeStatus(passed: number, failed: number, skipped: number): 'ok' | 
 
 // ─── Summary builder ──────────────────────────────────────────────────────────
 
-function buildSummary(
+/** Shape passed to buildSummary — one entry per scenario (pass or fail). */
+export interface SummaryScenario {
+  id: string;
+  title: string;
+  type?: string | null;
+  passed: boolean;
+  /** Present only when passed=false */
+  failure?: {
+    issueId: string;
+    file: string;
+    lineStart: number;
+    why: string;
+    suggestedPatch?: string;
+  };
+}
+
+/**
+ * Build the TestSprite-style markdown summary for cc chat relay.
+ *
+ * Format:
+ *   **tspr** ran N scenarios against `projectName` in Xs.
+ *
+ *   P pass · F fail · $cost · model · runId `shortId`
+ *
+ *   **Scenarios**
+ *   - ✅ `[Major]` scenario title
+ *   - ❌ `[Critical]` failing scenario title
+ *
+ *   **Failures**
+ *   ❌ **issue-XXXX** · `[Critical]` scenario title
+ *   File: `relative/path:line`
+ *   Fix: one-line why
+ *   → Apply: `tspr apply-fix XXXX` (or say "apply tspr fix XXXX")
+ *
+ *   [Local report](file:///.../report.html) · [Dashboard](http://localhost:7654)
+ */
+export function buildSummary(
   projectName: string,
   totalTests: number,
   passed: number,
@@ -104,15 +141,24 @@ function buildSummary(
   durationMs: number,
   runId: string,
   reportPath: string,
+  allScenarios?: Array<{ id: string; type?: string | null; title?: string | null; endpoint?: string | null; description?: string | null }>,
 ): string {
   const lines: string[] = [];
 
-  const overallIcon = failed === 0 ? '✅' : (passed > 0 ? '⚠️' : '❌');
-  lines.push(
-    `${overallIcon} tspr ran ${totalTests} test${totalTests !== 1 ? 's' : ''} against **${projectName}**. ` +
-    `${passed} pass${passed !== 1 ? '' : 'es'}, ${failed} fail${failed !== 1 ? '' : 's'}${skipped > 0 ? `, ${skipped} skipped` : ''}.`,
-  );
+  // ── Header line ─────────────────────────────────────────────────────────────
+  const durationLabel = durationMs < 1000
+    ? `${durationMs}ms`
+    : `${(durationMs / 1000).toFixed(0)}s`;
+  lines.push(`**tspr** ran ${totalTests} scenario${totalTests !== 1 ? 's' : ''} against \`${projectName}\` in ${durationLabel}.`);
+  lines.push('');
 
+  // ── Stats line ───────────────────────────────────────────────────────────────
+  const modelLabel = modelId || 'unknown';
+  const shortRunId = runId.slice(0, 8);
+  const skipPart = skipped > 0 ? ` · ${skipped} skipped` : '';
+  lines.push(`${passed} pass · ${failed} fail${skipPart} · ${modelLabel} · runId \`${shortRunId}\``);
+
+  // ── Warnings ─────────────────────────────────────────────────────────────────
   if (warnings.length > 0) {
     lines.push('');
     for (const w of warnings) {
@@ -120,49 +166,124 @@ function buildSummary(
     }
   }
 
+  // ── Scenarios list ───────────────────────────────────────────────────────────
+  // Build a map from testId → failure for O(1) lookup
+  const failureByTestId = new Map(failures.map((f) => [f.testId, f]));
+
+  if (allScenarios && allScenarios.length > 0) {
+    lines.push('');
+    lines.push('**Scenarios**');
+
+    for (const scenario of allScenarios) {
+      const failure = failureByTestId.get(scenario.id);
+      const isPassed = !failure;
+      const icon = isPassed ? '✅' : '❌';
+      const badge = computeSeverity({ type: scenario.type });
+      // Prefer scenario.title, then endpoint/description
+      const displayTitle =
+        scenario.title ||
+        scenario.endpoint ||
+        scenario.description ||
+        scenario.id;
+
+      lines.push(`- ${icon} \`${badge}\` ${displayTitle}`);
+    }
+  } else if (failures.length > 0 || passed > 0) {
+    // Fallback: only show failures in scenario list (when allScenarios not available)
+    lines.push('');
+    lines.push('**Scenarios**');
+    // Show passing count as a placeholder row
+    if (passed > 0) {
+      lines.push(`- ✅ ${passed} scenario${passed !== 1 ? 's' : ''} passed`);
+    }
+    for (const f of failures) {
+      const badge = computeSeverity({});
+      const displayTitle = f.title.length > 80 ? f.title.slice(0, 77) + '…' : f.title;
+      lines.push(`- ❌ \`${badge}\` ${displayTitle}`);
+    }
+  }
+
+  // ── Failures detail ──────────────────────────────────────────────────────────
   if (failures.length > 0) {
     lines.push('');
+    lines.push('**Failures**');
+    lines.push('');
+
     const displayCount = Math.min(failures.length, 5);
     for (let i = 0; i < displayCount; i++) {
       const f = failures[i];
-      const issueNum = i + 1;
-      lines.push(`❌ **Issue ${issueNum}** — \`${f.title}\``);
+      // Match back to scenario for severity (use failures's testId)
+      const scenario = allScenarios?.find((s) => s.id === f.testId);
+      const badge = computeSeverity({ type: scenario?.type });
+      const shortIssueId = f.issueId.slice(0, 4);
+      const displayTitle = resolveTitle(f.title, allScenarios ?? null);
+      const truncTitle = displayTitle.length > 80 ? displayTitle.slice(0, 77) + '…' : displayTitle;
+
+      lines.push(`❌ **issue-${shortIssueId}** · \`${badge}\` ${truncTitle}`);
 
       const fix = f.suggestedFixRegion;
       if (fix) {
-        lines.push(`   File: \`${fix.file}:${fix.lineStart}\``);
+        // Relativize the path — strip internal container paths, use short relative form
+        const relativePath = relativizeFilePath(fix.file);
+        lines.push(`File: \`${relativePath}:${fix.lineStart}\``);
+
         if (fix.why) {
-          lines.push(`   Suggested fix: ${fix.why}`);
+          const why = fix.why.length > 120 ? fix.why.slice(0, 117) + '…' : fix.why;
+          lines.push(`Fix: ${why}`);
         }
       }
 
-      // Inline first error line if meaningful
-      const firstStackLine = f.stack?.split('\n')[0]?.trim();
-      if (firstStackLine && !firstStackLine.startsWith('at ')) {
-        lines.push(`   Error: ${firstStackLine.slice(0, 120)}`);
-      }
+      lines.push(`→ Apply: \`tspr apply-fix ${f.issueId.slice(0, 4)}\` (or say "apply tspr fix ${f.issueId.slice(0, 4)}")`);
 
-      if (f.suggestedPatch) {
-        lines.push(`   Apply with: \`tspr apply-fix ${f.issueId}\` or in cc: "apply tspr issue ${issueNum}"`);
-      } else if (fix) {
-        lines.push(`   No auto-fix patch. Regenerate with additionalInstruction for better hints.`);
-      }
+
       lines.push('');
     }
+
     if (failures.length > displayCount) {
-      lines.push(`_… and ${failures.length - displayCount} more — see local report below._`);
+      lines.push(`_… and ${failures.length - displayCount} more — see dashboard for full list._`);
       lines.push('');
     }
   }
 
-  const costMs = durationMs < 1000 ? `${durationMs}ms` : `${(durationMs / 1000).toFixed(0)}s`;
-  const modelLabel = modelId || 'unknown';
-  const shortRunId = runId.slice(0, 8);
-  lines.push(`Cost: ${modelLabel} · ${costMs} · runId: ${shortRunId}`);
-  lines.push(`Local report: file:///${reportPath.replace(/\\/g, '/')}`);
-  lines.push(`Dashboard: \`tspr dashboard\``);
+  // ── Footer ───────────────────────────────────────────────────────────────────
+  // Use localhost dashboard URL only (no file:// links — not clickable in terminal)
+  const reportFileUrl = `file:///${reportPath.replace(/\\/g, '/')}`;
+  lines.push(`[Local report](${reportFileUrl}) · [Dashboard](http://localhost:7654)`);
 
   return lines.join('\n');
+}
+
+/**
+ * Relativize a file path for human display.
+ * Strips internal tspr-runtime container paths and Windows absolute path prefixes.
+ * Returns a short, readable form.
+ */
+export function relativizeFilePath(file: string): string {
+  // Normalize backslashes to forward slashes
+  const normalized = file.replace(/\\/g, '/');
+
+  // Strip known container-internal prefixes
+  // e.g. "../../tspr-runtime/tests/meme-weather.spec.ts" → "tspr-generated/meme-weather.spec.ts"
+  const containerMatch = normalized.match(/tspr-runtime\/tests\/(.+)$/);
+  if (containerMatch) {
+    return `tspr-generated/${containerMatch[1]}`;
+  }
+
+  // Strip leading ../.. traversals
+  const traversalStripped = normalized.replace(/^(\.\.\/)+/, '');
+  if (traversalStripped !== normalized) {
+    return traversalStripped;
+  }
+
+  // Strip Windows absolute path prefix (e.g. C:/Users/.../project/src/...)
+  // Keep the portion after the last known project-root marker
+  const srcMatch = normalized.match(/(?:src|app|lib|pages|routes|api)\/.+$/);
+  if (srcMatch) {
+    return srcMatch[0];
+  }
+
+  // Return as-is if nothing matched (already short)
+  return normalized;
 }
 
 // ─── runExecute ───────────────────────────────────────────────────────────────
@@ -513,6 +634,7 @@ Return ONLY the TypeScript code, no markdown fences.`;
     totalDurationMs,
     htmlRunId,
     reportPath,
+    allScenarios,
   );
 
   // ── Step: write-artifacts ─────────────────────────────────────────────────
