@@ -52,6 +52,8 @@ db.exec(`
     duration_ms     INTEGER,
     suggested_fix_region TEXT,
     suggested_patch TEXT,
+    events_json     TEXT,
+    screenshot_base64 TEXT,
     created_at      TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS sessions (
@@ -189,7 +191,33 @@ const FIXTURE_FAILURES = [
 ];
 
 const insertRun = db.prepare(`INSERT INTO runs (id, tool_name, project_path, started_at, completed_at, status, error_code) VALUES (?, ?, ?, ?, ?, ?, ?)`);
-const insertResult = db.prepare(`INSERT INTO test_results (id, run_id, test_id, test_name, test_file, test_type, status, error_message, duration_ms, suggested_fix_region, suggested_patch, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+const insertResultRaw = db.prepare(`INSERT INTO test_results (id, run_id, test_id, test_name, test_file, test_type, status, error_message, duration_ms, suggested_fix_region, suggested_patch, events_json, screenshot_base64, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+
+// 1×1 transparent PNG (smallest valid PNG, base64) — placeholder visible "screenshot" so user sees the embed UI light up
+const TINY_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAIAAAoAAv/lxKUAAAAASUVORK5CYII=';
+
+// Generate plausible events for a failure / pass
+function makeEvents(testName, isFail, endpoint) {
+  const evs = [
+    { ts: 0,    kind: 'navigation',   detail: 'GET ' + (endpoint || '/') },
+    { ts: 12,   kind: 'http-request', detail: 'fetch(' + (endpoint || '/') + ')', data: { method: 'GET' } },
+    { ts: 184,  kind: 'http-response', detail: (isFail ? '500 Internal Server Error' : '200 OK') + ' in 172ms', data: { status: isFail ? 500 : 200 } },
+    { ts: 190,  kind: 'console',      detail: isFail ? 'console.error: TypeError: cannot read property of undefined' : 'console.log: ' + testName + ' completed' },
+    { ts: 198,  kind: 'assertion',    detail: isFail ? 'expected 200 to equal ' + (isFail ? '500' : '200') : 'passed' },
+  ];
+  return JSON.stringify(evs);
+}
+
+// Wrapper that auto-attaches events + a tiny screenshot to every failure.
+const insertResult = {
+  run(id, runId, testId, testName, testFile, testType, status, errorMessage, durationMs, sfr, patch, createdAt) {
+    const isFail = status === 'failed';
+    const endpoint = /\/api\/[^ ]+/.exec(testName)?.[0] ?? null;
+    const events = makeEvents(testName, isFail, endpoint);
+    const screenshot = isFail ? TINY_PNG_B64 : null;
+    insertResultRaw.run(id, runId, testId, testName, testFile, testType, status, errorMessage, durationMs, sfr, patch, events, screenshot, createdAt);
+  },
+};
 
 // ─── meme-weather: declining trend (was healthy, now broken) ────────────────
 // Runs: day 14, 12, 10, 8 — progressively worse

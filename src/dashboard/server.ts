@@ -110,6 +110,8 @@ interface TestResultRow {
   durationMs: number | null;
   suggestedFixRegion: string | null;
   suggestedPatch: string | null;
+  events?: unknown;
+  screenshotBase64?: string | null;
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -268,19 +270,35 @@ async function openSqlite(dbFilePath: string): Promise<DbHandle> {
             test_file: string; test_type: string; status: string;
             error_message: string | null; duration_ms: number | null;
             suggested_fix_region: string | null; suggested_patch: string | null;
-          }>(`SELECT * FROM test_results WHERE run_id = ?`).all(runId).map((r) => ({
-            id: r.id,
-            runId: r.run_id,
-            testId: r.test_id,
-            testName: r.test_name,
-            testFile: r.test_file ?? '',
-            testType: r.test_type ?? '',
-            status: r.status,
-            errorMessage: r.error_message ?? null,
-            durationMs: r.duration_ms ?? null,
-            suggestedFixRegion: r.suggested_fix_region ?? null,
-            suggestedPatch: r.suggested_patch ?? null,
-          }));
+            events_json: string | null; screenshot_base64: string | null;
+          }>(`SELECT * FROM test_results WHERE run_id = ?`).all(runId).map((r) => {
+            let events: unknown = null;
+            if (r.events_json) {
+              try { events = JSON.parse(r.events_json); } catch { events = null; }
+            }
+            // suggested_fix_region is stored as a JSON string; parse it so the UI
+            // can access .file / .lineStart directly (else `.replace()` throws on
+            // undefined and breaks the side-panel render).
+            let parsedFixRegion: unknown = null;
+            if (r.suggested_fix_region) {
+              try { parsedFixRegion = JSON.parse(r.suggested_fix_region); } catch { parsedFixRegion = null; }
+            }
+            return {
+              id: r.id,
+              runId: r.run_id,
+              testId: r.test_id,
+              testName: r.test_name,
+              testFile: r.test_file ?? '',
+              testType: r.test_type ?? '',
+              status: r.status,
+              errorMessage: r.error_message ?? null,
+              durationMs: r.duration_ms ?? null,
+              suggestedFixRegion: (parsedFixRegion ?? r.suggested_fix_region) as never,
+              suggestedPatch: r.suggested_patch ?? null,
+              events: events as never,
+              screenshotBase64: r.screenshot_base64 ?? null,
+            };
+          });
         } else {
           // Legacy schema: id INTEGER, run_id INTEGER, test_id TEXT, title TEXT, outcome TEXT, stack TEXT
           const numId = parseInt(runId, 10);
