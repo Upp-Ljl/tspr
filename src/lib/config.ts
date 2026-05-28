@@ -2,6 +2,7 @@
  * src/lib/config.ts
  * Loads ~/.tspr/config.json with Zod validation.
  * Merges env-var overrides on top.
+ * Also exports writeConfig for atomic, validated writes from the settings UI.
  *
  * ENV VARS (override config.json):
  *   TSPR_PROVIDER        — overrides config.provider
@@ -151,4 +152,101 @@ function applyEnvOverrides(cfg: TsprConfig): TsprConfig {
   }
 
   return out;
+}
+
+// ─────────────────────────────────────────────
+// Config writer (atomic, validated)
+// ─────────────────────────────────────────────
+
+/**
+ * Forbidden field name patterns — literal API key values must never be
+ * persisted to config.json. Keys must come from the environment.
+ */
+const FORBIDDEN_KEY_FIELDS = /^(apiKey|.*_API_KEY)$/;
+
+/**
+ * Check whether the input object contains a literal API key value.
+ * Recurses one level deep (covers top-level and nested provider objects).
+ */
+function containsLiteralApiKey(input: unknown): boolean {
+  if (typeof input !== 'object' || input === null) return false;
+  const obj = input as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
+    if (FORBIDDEN_KEY_FIELDS.test(key)) return true;
+    // Recurse one level (covers e.g. openaiCompat.apiKey)
+    const val = obj[key];
+    if (typeof val === 'object' && val !== null) {
+      for (const innerKey of Object.keys(val as Record<string, unknown>)) {
+        if (FORBIDDEN_KEY_FIELDS.test(innerKey)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** Default config path: ~/.tspr/config.json */
+function defaultWriteConfigPath(): string {
+  return path.join(os.homedir(), '.tspr', 'config.json');
+}
+
+/**
+ * Atomically writes a validated config to ~/.tspr/config.json (or a custom path).
+ *
+ * - Validates with TsprConfigSchema (zod)
+ * - Refuses to persist any field named `apiKey` or matching `*_API_KEY`
+ *   (defense in depth — keys must come from env, never written to config.json)
+ * - Writes to a `.tmp` sibling file then renames for atomicity (POSIX rename;
+ *   on Windows, fs.renameSync is not truly atomic but is safe for config files)
+ * - Returns the resolved TsprConfig that is now active (same as loadConfig would return)
+ *
+ * @throws {z.ZodError} if input fails schema validation
+ * @throws {Error} if input contains a literal API key field, or the path is not writable
+ */
+export function writeConfig(input: unknown, configPath?: string): TsprConfig {
+  // Security gate: reject literal API key values
+  if (containsLiteralApiKey(input)) {
+    throw new Error(
+      'writeConfig: input contains a literal API key field (apiKey or *_API_KEY). ' +
+      'API keys must be stored in environment variables and referenced via apiKeyEnv, ' +
+      'never written to config.json.',
+    );
+  }
+
+  // Schema validation — throws ZodError on failure
+  const result = TsprConfigSchema.safeParse(input);
+  if (!result.success) {
+    const issues = result.error.issues
+      .map((i) => `  ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
+    throw new Error(`writeConfig: input failed validation:\n${issues}`);
+  }
+
+  const validated = result.data;
+  const filePath = configPath ?? defaultWriteConfigPath();
+
+  // Ensure parent directory exists
+  const dir = path.dirname(filePath);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    throw new Error(`writeConfig: cannot create config directory ${dir}: ${(err as Error).message}`);
+  }
+
+  // Atomic write: write to temp file then rename
+  const tmpPath = `${filePath}.tmp`;
+  try {
+    fs.writeFileSync(tmpPath, JSON.stringify(validated, null, 2), { encoding: 'utf-8' });
+  } catch (err) {
+    throw new Error(`writeConfig: cannot write temp file ${tmpPath}: ${(err as Error).message}`);
+  }
+
+  try {
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    // Clean up tmp on failure (best-effort)
+    try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+    throw new Error(`writeConfig: cannot rename ${tmpPath} → ${filePath}: ${(err as Error).message}`);
+  }
+
+  return validated;
 }
