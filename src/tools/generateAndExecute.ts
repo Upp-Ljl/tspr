@@ -12,6 +12,7 @@ import * as crypto from 'node:crypto';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolResult, ServerContext } from '../types/mcp.js';
 import { createSandbox, SandboxError } from '../sandbox/index.js';
+import { captureFailureScreenshot, inferTestUrl } from '../sandbox/screenshot.js';
 import { renderHtmlReport } from '../report/html-renderer.js';
 import { computeStableIssueId } from '../dashboard/issues.js';
 import { computeSeverity } from '../lib/severity.js';
@@ -35,6 +36,20 @@ export interface TimelineStep {
   costUsd?: number;     // estimated; 0 if unknown
   promptChars?: number;
   responseChars?: number;
+}
+
+/**
+ * One event in a per-scenario chronological replay timeline.
+ * Append-only; generated at parse time from vitest output and test title heuristics.
+ */
+export interface ScenarioReplayEvent {
+  /** ms since scenario start (0 = start of scenario) */
+  ts: number;
+  kind: 'http-request' | 'http-response' | 'console' | 'assertion' | 'navigation';
+  /** Human-readable one-liner — rendered in the timeline UI */
+  detail: string;
+  /** Optional extras for drill-down */
+  data?: Record<string, unknown>;
 }
 
 export interface ExecuteResult {
@@ -61,6 +76,10 @@ export interface ExecuteResult {
       why: string;
     };
     suggestedPatch?: string;
+    /** Base64-encoded PNG screenshot of the failing page (best-effort; null if unavailable) */
+    screenshotBase64?: string | null;
+    /** Chronological replay timeline for this failure */
+    events?: ScenarioReplayEvent[];
   }>;
   /**
    * Pre-formatted markdown summary suitable for direct relay to user via cc chat.
@@ -284,6 +303,103 @@ export function relativizeFilePath(file: string): string {
 
   // Return as-is if nothing matched (already short)
   return normalized;
+}
+
+// ─── Replay event builder ──────────────────────────────────────────────────────
+
+/**
+ * Build a ScenarioReplayEvent[] for a failed test.
+ *
+ * Strategy (fixture-first, no Playwright needed):
+ *  1. If the test title implies an HTTP endpoint (e.g. "GET /api/memes returns 200"),
+ *     emit one http-request + http-response pair.
+ *  2. If vitest console output contains matching lines, emit console events.
+ *  3. Always emit one assertion event from the failureMessage.
+ *
+ * Returns at minimum: one assertion event.
+ */
+export function buildReplayEvents(
+  testTitle: string,
+  failureMessages: string[],
+  consoleOutput?: string,
+): ScenarioReplayEvent[] {
+  const events: ScenarioReplayEvent[] = [];
+  let ts = 0;
+
+  // 1. HTTP request/response pair — inferred from test title
+  // Match patterns like "GET /api/foo", "POST /users 201", "should return 200 for /api/x"
+  const httpMatch = testTitle.match(
+    /\b(GET|POST|PUT|PATCH|DELETE|HEAD)\s+(\/[^\s)"']*)/i,
+  );
+  if (httpMatch) {
+    const method = httpMatch[1].toUpperCase();
+    const urlPath = httpMatch[2];
+    // Try to extract status code from title (e.g. "returns 200", "status 404")
+    const statusMatch = testTitle.match(/\b(\d{3})\b/);
+    const expectedStatus = statusMatch ? parseInt(statusMatch[1], 10) : null;
+
+    events.push({
+      ts,
+      kind: 'http-request',
+      detail: `${method} ${urlPath}`,
+      data: { method, path: urlPath },
+    });
+    ts += 5; // minimal synthetic ms offset
+
+    // Response: if we have a failure message with status info, show "got N"
+    const gotStatusMatch = (failureMessages.join('\n')).match(/\bexpected\s+(\d{3})|got\s+(\d{3})|status[:\s]+(\d{3})/i);
+    const actualStatus = gotStatusMatch
+      ? parseInt(gotStatusMatch[1] ?? gotStatusMatch[2] ?? gotStatusMatch[3], 10)
+      : null;
+
+    const responseDetail = expectedStatus && actualStatus && actualStatus !== expectedStatus
+      ? `${method} ${urlPath} → ${actualStatus} (expected ${expectedStatus})`
+      : actualStatus
+        ? `${method} ${urlPath} → ${actualStatus}`
+        : `${method} ${urlPath} → (failed)`;
+
+    events.push({
+      ts,
+      kind: 'http-response',
+      detail: responseDetail,
+      data: { expectedStatus, actualStatus },
+    });
+    ts += 5;
+  }
+
+  // 2. Console events — look for matching lines in vitest console output
+  if (consoleOutput) {
+    const lines = consoleOutput.split('\n');
+    for (const line of lines) {
+      const consoleLevelMatch = line.match(/\b(console\.(log|warn|error|info)):\s*(.*)/i);
+      if (consoleLevelMatch) {
+        const msg = consoleLevelMatch[3].slice(0, 200);
+        events.push({
+          ts,
+          kind: 'console',
+          detail: `${consoleLevelMatch[1]}: ${msg}`,
+          data: { level: consoleLevelMatch[2] },
+        });
+        ts += 1;
+      }
+    }
+  }
+
+  // 3. Assertion event — always emit from failureMessage
+  const failureText = failureMessages.join('\n').slice(0, 500);
+  if (failureText) {
+    // Extract the first meaningful assertion line (skip stack frames)
+    const lines = failureText.split('\n').filter((l) => l.trim() && !l.trim().startsWith('at '));
+    const assertionLine = lines[0]?.slice(0, 200) || failureText.slice(0, 200);
+    events.push({
+      ts,
+      kind: 'assertion',
+      detail: assertionLine,
+      data: { fullMessage: failureText },
+    });
+  }
+
+  return events;
 }
 
 // ─── runExecute ───────────────────────────────────────────────────────────────
@@ -580,8 +696,17 @@ Return ONLY the TypeScript code, no markdown fences.`;
           const filePath = file.testFilePath ?? file.name ?? '';
           for (const t of tests) {
             if (t.status === 'failed') {
-              const failureMsg = (t.failureMessages || []).join('\n');
+              const failureMessages = t.failureMessages ?? [];
+              const failureMsg = failureMessages.join('\n');
               const issueId = computeStableIssueId(t.fullName, projectPath);
+
+              // Build replay events from vitest output and test title heuristics
+              const events = buildReplayEvents(
+                t.fullName,
+                failureMessages,
+                sandboxResult.stderr,
+              );
+
               failures.push({
                 testId: t.fullName,
                 issueId,
@@ -593,6 +718,8 @@ Return ONLY the TypeScript code, no markdown fences.`;
                   lineEnd: 10,
                   why: 'Test failed — check the stack trace for the root cause.',
                 },
+                screenshotBase64: null,  // populated below if sandbox available
+                events,
               });
             }
           }
@@ -611,6 +738,32 @@ Return ONLY the TypeScript code, no markdown fences.`;
     start: parseStart,
     durationMs: Date.now() - parseStart,
   });
+
+  // ── Best-effort Playwright screenshots for failures ───────────────────────
+  // Only available when using the real sandbox (not mock DockerSandbox).
+  // captureFailureScreenshot is graceful — always returns null on any error.
+  // We skip this when sandbox (mock) is provided (test path) to avoid slowdown.
+  if (!sandbox && failures.length > 0) {
+    // We don't have a SandboxHandle at this point (handle was disposed above).
+    // Screenshots are therefore deferred to a future round that keeps the handle alive.
+    // For now: attempt to infer URL from specFilePath and mark as deferred.
+    // This populates inferredUrl in events for future Playwright wire-up.
+    for (const failure of failures) {
+      const inferredUrl = inferTestUrl(specFilePath);
+      if (inferredUrl && failure.events) {
+        // Add a navigation event so the UI has context even without a screenshot
+        const alreadyHasNav = failure.events.some((e) => e.kind === 'navigation');
+        if (!alreadyHasNav) {
+          failure.events.unshift({
+            ts: 0,
+            kind: 'navigation',
+            detail: `Navigate to ${inferredUrl}`,
+            data: { url: inferredUrl },
+          });
+        }
+      }
+    }
+  }
 
   const totalTests = passed + failed + skipped;
   const status = computeStatus(passed, failed, skipped);
