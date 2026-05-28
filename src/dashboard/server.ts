@@ -13,7 +13,7 @@
  *   GET /app.js                  → dashboard JS
  *   GET /artifacts/:runId/:file  → static file from ~/.tspr/runs/<runId>/<file>
  *
- * Routes (new):
+ * Routes (existing):
  *   GET /compare                 → compare.html (two-run diff view)
  *   GET /cost                    → cost.html (token/spend view)
  *   GET /api/projects            → project health summary list
@@ -21,6 +21,12 @@
  *   GET /api/trends?days=N       → pass rate over time
  *   GET /api/compare?a=X&b=Y     → diff between two runs
  *   GET /api/file?path=<abs>     → file content (allowlist-gated)
+ *
+ * Routes (Phase 1 — dashboard redesign):
+ *   GET /settings                → settings.html
+ *   GET /api/settings            → current config.json as JSON
+ *   POST /api/settings           → write new config (never stores key values)
+ *   GET /api/changes?project=<path> → newly broken / recovered between last 2 runs
  */
 
 import http from 'node:http';
@@ -661,6 +667,43 @@ function handlePost(
       return;
     }
 
+    // ── POST /api/settings ─────────────────────────────────────────────────
+    if (urlPath === '/api/settings') {
+      // Validate: provider must be known string
+      const allowedProviders = ['claude-subprocess', 'openai-compat', 'minimax'];
+      const provider = body.provider ? String(body.provider) : 'claude-subprocess';
+      if (!allowedProviders.includes(provider)) {
+        sendJson(res, 400, { error: `Unknown provider: ${provider}` });
+        return;
+      }
+      const newConfig: Record<string, unknown> = {
+        provider,
+        baseUrl: body.baseUrl ? String(body.baseUrl) : '',
+        apiKeyEnv: body.apiKeyEnv ? String(body.apiKeyEnv) : '',
+        models: {
+          haiku:  body.models && typeof body.models === 'object' ? String((body.models as Record<string,unknown>).haiku ?? '') : '',
+          sonnet: body.models && typeof body.models === 'object' ? String((body.models as Record<string,unknown>).sonnet ?? '') : '',
+          opus:   body.models && typeof body.models === 'object' ? String((body.models as Record<string,unknown>).opus ?? '') : '',
+        },
+      };
+      // Attempt to use sibling C's writeConfig; fall back to direct fs write
+      try {
+        const cfgModule = await import('../lib/config.js').catch(() => null) as { writeConfig?: (cfg: Record<string, unknown>) => void | Promise<void> } | null;
+        if (cfgModule && typeof cfgModule.writeConfig === 'function') {
+          await cfgModule.writeConfig(newConfig);
+        } else {
+          console.warn('[tspr dashboard] writeConfig not available — writing config directly');
+          const configDir = path.join(os.homedir(), '.tspr');
+          if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+          fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify(newConfig, null, 2), 'utf-8');
+        }
+        sendJson(res, 200, { ok: true });
+      } catch (err) {
+        sendJson(res, 500, { error: `Failed to write config: ${String(err)}` });
+      }
+      return;
+    }
+
     sendJson(res, 404, { error: 'POST route not found' });
   };
 
@@ -679,6 +722,7 @@ function makeHandler(
   runTemplate: string,
   compareTemplate: string,
   costTemplate: string,
+  settingsTemplate: string,
   extraAllowedPaths: string[],
 ) {
   // ── Body reader ───────────────────────────────────────────────────────────
@@ -973,6 +1017,82 @@ function makeHandler(
       return;
     }
 
+    // ── /settings ─────────────────────────────────────────────────────────
+    if (urlPath === '/settings' || urlPath === '/settings/') {
+      sendHtml(res, settingsTemplate);
+      return;
+    }
+
+    // ── /api/settings (GET) — returns current config as JSON ──────────────
+    if (urlPath === '/api/settings' || urlPath === '/api/settings/') {
+      const configPath = path.join(os.homedir(), '.tspr', 'config.json');
+      let cfg: Record<string, unknown> = {
+        provider: 'claude-subprocess',
+        baseUrl: '',
+        apiKeyEnv: '',
+        models: { haiku: '', sonnet: '', opus: '' },
+      };
+      try {
+        if (fs.existsSync(configPath)) {
+          const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+          cfg = { ...cfg, ...raw };
+        }
+      } catch {
+        // return defaults
+      }
+      sendJson(res, 200, cfg);
+      return;
+    }
+
+    // ── /api/changes?project=<path> — newly broken / recovered ────────────
+    if (urlPath === '/api/changes' || urlPath === '/api/changes/') {
+      const projectPath = params.get('project');
+      if (!projectPath) {
+        sendJson(res, 400, { error: '?project= is required' });
+        return;
+      }
+      // Async wrapper — computes changes between last 2 runs for this project
+      (async () => {
+        let changeResult: { newlyBroken: string[]; newlyRecovered: string[] } = { newlyBroken: [], newlyRecovered: [] };
+        try {
+          // Try to use sibling subagent C's computeProjectChanges if available
+          // TODO: replace stub with: import { computeProjectChanges } from '../dashboard/changes.js'
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const changesModule = await (import('../dashboard/changes.js' as string) as Promise<any>).catch(() => null);
+          if (changesModule && typeof changesModule.computeProjectChanges === 'function') {
+            changeResult = await changesModule.computeProjectChanges(projectPath, db.raw);
+          } else {
+            // Fallback: compute directly from DB (runs newest-first)
+            const runs = db.getRuns()
+              .filter((r) => r.projectPath === projectPath)
+              .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+            if (runs.length >= 2) {
+              const lastResults = db.getTestResults(runs[0].id);
+              const prevResults = db.getTestResults(runs[1].id);
+              const lastFailed = new Set(lastResults.filter((r) => r.status === 'failed').map((r) => r.testId));
+              const prevFailed = new Set(prevResults.filter((r) => r.status === 'failed').map((r) => r.testId));
+              const lastTestMap = new Map(lastResults.map((r) => [r.testId, r.testName]));
+              changeResult.newlyBroken = [...lastFailed]
+                .filter((id) => !prevFailed.has(id))
+                .map((id) => lastTestMap.get(id) ?? id);
+              changeResult.newlyRecovered = [...prevFailed]
+                .filter((id) => !lastFailed.has(id))
+                .map((id) => {
+                  const r = prevResults.find((x) => x.testId === id);
+                  return r?.testName ?? id;
+                });
+            }
+          }
+        } catch {
+          // Return empty on any error
+        }
+        sendJson(res, 200, changeResult);
+      })().catch((err) => {
+        try { sendJson(res, 500, { error: String(err) }); } catch { /* ignore */ }
+      });
+      return;
+    }
+
     // ── / (home) ───────────────────────────────────────────────────────────
     if (urlPath === '/' || urlPath === '/index.html') {
       sendHtml(res, indexTemplate);
@@ -1025,6 +1145,7 @@ export async function startDashboard(opts?: DashboardOptions): Promise<Dashboard
   const runTemplate = readUiFile('run.html');
   const compareTemplate = readUiFile('compare.html');
   const costTemplate = readUiFile('cost.html');
+  const settingsTemplate = readUiFile('settings.html');
 
   const db = await openSqlite(dbFilePath);
 
@@ -1036,6 +1157,7 @@ export async function startDashboard(opts?: DashboardOptions): Promise<Dashboard
     runTemplate,
     compareTemplate,
     costTemplate,
+    settingsTemplate,
     extraAllowedPaths,
   );
   const server = http.createServer(handler);

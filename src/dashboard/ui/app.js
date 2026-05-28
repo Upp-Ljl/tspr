@@ -551,205 +551,225 @@ function wirePostActionBtns(actionsEl, issue) {
 
   wirePanel();
 
-  var issuesData = [];
-  var historyOpen = false;
+  var PAGE_SIZE = 25;
+  var currentPage = 0;
+  var allRuns = [];
+  var filterProject = '';
 
-  var histToggle = document.getElementById('history-toggle');
-  var histPanel  = document.getElementById('history-panel');
-  var histCaret  = document.getElementById('history-caret');
-  if (histToggle) {
-    histToggle.addEventListener('click', function () {
-      historyOpen = !historyOpen;
-      if (histPanel) histPanel.style.display = historyOpen ? 'block' : 'none';
-      if (histCaret) histCaret.textContent = historyOpen ? '▲ hide' : '▼ show';
+  var projectFilter = document.getElementById('project-filter');
+  if (projectFilter) {
+    projectFilter.addEventListener('change', function () {
+      filterProject = projectFilter.value;
+      currentPage = 0;
+      renderRunsList();
     });
   }
 
-  function load() {
-    // Stats
-    fetch('/api/stats').then(function (r) { return r.json(); }).then(function (stats) {
-      var el = document.getElementById('stat-runs');
-      if (el) el.textContent = stats.totalRuns;
-      var el2 = document.getElementById('stat-tests');
-      if (el2) el2.textContent = stats.totalTestsRun;
-      var el3 = document.getElementById('stat-pass-rate');
-      if (el3) el3.textContent = pct(stats.avgPassRate);
-    }).catch(function () {});
+  var prevBtn = document.getElementById('runs-prev');
+  var nextBtn = document.getElementById('runs-next');
+  if (prevBtn) prevBtn.addEventListener('click', function () { currentPage--; renderRunsList(); });
+  if (nextBtn) nextBtn.addEventListener('click', function () { currentPage++; renderRunsList(); });
 
-    // Projects (sidebar)
-    fetch('/api/projects').then(function (r) { return r.json(); }).then(function (projects) {
-      var countEl = document.getElementById('projects-count');
-      var statsEl = document.getElementById('stat-projects');
-      if (countEl) countEl.textContent = projects.length;
-      if (statsEl) statsEl.textContent = projects.length;
-
-      if (projects.length === 0) {
-        projectList.innerHTML = '<div class="empty-state empty-state--compact">' +
-          '<div class="empty-state__heading">No runs yet</div>' +
-          '<div class="empty-state__desc">tspr hasn\'t run yet.</div>' +
-          '<pre class="empty-state__code">tspr mcp</pre>' +
-          '</div>';
-        return;
-      }
-
-      var html = '';
-      projects.forEach(function (proj) {
-        var delta = proj.delta;
-        var deltaClass = delta > 0 ? 'pos' : delta < 0 ? 'neg' : 'flat';
-        var deltaStr = delta > 0 ? '+' + delta : delta < 0 ? String(delta) : '';
-        var isStale = proj.lastRunAt && (Date.now() - new Date(proj.lastRunAt).getTime()) > 3 * 24 * 60 * 60 * 1000;
-
-        html += '<div class="project-card" data-project-path="' + escHtml(proj.projectPath || '') + '">';
-        html += '<div class="project-card__top">';
-        html += '<span class="project-card__status-dot">' + statusDot(proj.status) + '</span>';
-        html += '<span class="project-card__name">' + escHtml(proj.projectName) + '</span>';
-        html += pillHtml(proj.status);
-        html += '</div>';
-        html += '<div class="project-card__stats">' + proj.passingTests + ' / ' + proj.totalTests + ' passing';
-        if (proj.totalTests > 0) html += ' (' + pct(proj.passRate) + ')';
-        html += '</div>';
-        html += '<div class="project-card__meta">';
-        html += '<span class="project-card__time">' + escHtml(relativeTime(proj.lastRunAt)) + '</span>';
-        if (delta !== 0 && deltaStr) {
-          html += '<span class="project-card__delta ' + deltaClass + '">' + escHtml(deltaStr) + ' since last</span>';
-        }
-        if (isStale) html += '<span class="stale-badge">stale</span>';
-        html += '<a class="project-card__open" href="' + escHtml('file:///' + (proj.projectPath || '').replace(/\\/g, '/')) + '" title="Open folder">Open ↗</a>';
-        html += '</div>';
-        html += '</div>';
-      });
-      projectList.innerHTML = html;
-
-      projectList.querySelectorAll('.project-card').forEach(function (card) {
-        card.addEventListener('click', function (e) {
-          if (e.target.tagName === 'A') return;
-          var pp = card.getAttribute('data-project-path');
-          showProjectPanel(pp, projects);
-        });
-      });
-    }).catch(function () {
-      projectList.innerHTML = '<div class="empty-state empty-state--compact"><div class="empty-state__heading">Failed to load projects</div></div>';
-    });
-
-    // Issues (primary — show up to 20)
-    fetch('/api/issues?limit=20').then(function (r) { return r.json(); }).then(function (issues) {
-      issuesData = issues;
-      renderIssuesList(issues);
-    }).catch(function () {});
-
-    // Runs history
-    fetch('/api/runs').then(function (r) { return r.json(); }).then(function (runs) {
-      var countEl = document.getElementById('history-count');
-      if (countEl) countEl.textContent = runs.length;
-      renderRunsTable(runs);
-    }).catch(function () {});
+  function visibleRuns() {
+    if (!filterProject) return allRuns;
+    return allRuns.filter(function (r) { return r.project_path === filterProject; });
   }
 
-  function renderIssuesList(issues) {
-    var countEl = document.getElementById('issues-count');
-    var listEl  = document.getElementById('issues-list');
-    if (!listEl) return;
+  function renderRunsList() {
+    var runsListEl = document.getElementById('runs-list');
+    if (!runsListEl) return;
 
-    var visible = issues.filter(function (i) { return isVisible(i.testId); });
-    if (countEl) countEl.textContent = visible.length;
+    var runs = visibleRuns();
+    var total = runs.length;
+    var pageRuns = runs.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+    var totalPages = Math.ceil(total / PAGE_SIZE) || 1;
 
-    if (visible.length === 0) {
-      listEl.innerHTML = '<div class="empty-state">' +
-        '<div class="empty-state__heading">No active issues</div>' +
-        '<div class="empty-state__desc">All tests passing, or issues have been snoozed.</div>' +
+    var countEl = document.getElementById('runs-count');
+    if (countEl) countEl.textContent = total;
+
+    var pagerEl = document.getElementById('runs-pager');
+    if (pagerEl && total > PAGE_SIZE) {
+      pagerEl.textContent = 'page ' + (currentPage + 1) + ' / ' + totalPages;
+    } else if (pagerEl) {
+      pagerEl.textContent = '';
+    }
+
+    var pagEl = document.getElementById('runs-pagination');
+    if (pagEl) pagEl.style.display = total > PAGE_SIZE ? 'flex' : 'none';
+    if (prevBtn) prevBtn.disabled = currentPage <= 0;
+    if (nextBtn) nextBtn.disabled = currentPage >= totalPages - 1;
+
+    if (pageRuns.length === 0) {
+      runsListEl.innerHTML = '<div class="empty-state">' +
+        '<div class="empty-state__heading">No runs yet</div>' +
+        '<div class="empty-state__desc">tspr hasn\'t run yet. Add it to your IDE via MCP:</div>' +
+        '<pre class="empty-state__code">claude mcp add tspr -- npx tspr mcp\n\n# Then ask:\nCan you test this project with tspr?</pre>' +
         '</div>';
       return;
     }
 
     var html = '';
-    visible.forEach(function (issue, i) { html += buildIssueCard(issue, i); });
-    listEl.innerHTML = html;
+    pageRuns.forEach(function (r) {
+      var runId = String(r.id || '');
+      var status = (r.outcome || r.status || 'in-progress').toLowerCase();
+      var proj = projectLabel(r.project_path || null);
+      var runIdShort = runId.length > 10 ? runId.slice(0, 10) + '…' : runId;
 
-    listEl.querySelectorAll('.issue-card__header').forEach(function (header) {
-      header.addEventListener('click', function () {
-        header.closest('.issue-card').classList.toggle('open');
-      });
+      // Count pass/fail from runs table (we don't have per-run counts here; show status pill + project)
+      html += '<div class="run-row" onclick="location.href=\'/runs/' + encodeURIComponent(runId) + '\'"' +
+        ' role="link" tabindex="0">';
+      html += '<div class="run-row__status">' + pillHtml(status) + '</div>';
+      html += '<div class="run-row__body">';
+      html += '<div class="run-row__title">';
+      html += '<span class="run-id-cell" title="' + escHtml(runId) + '">' + escHtml(runIdShort) + '</span>';
+      if (proj !== '—') html += ' · <span style="color:var(--text)">' + escHtml(proj) + '</span>';
+      html += '</div>';
+      html += '<div class="run-row__meta">';
+      if (r.tool) html += escHtml(r.tool.replace('tspr_', '').replace(/_/g, ' '));
+      if (r.duration_ms) html += ' · ' + formatMs(r.duration_ms);
+      html += '</div>';
+      html += '</div>';
+      html += '<div class="run-row__time">' + escHtml(relativeTime(r.started_at)) + '</div>';
+      html += '</div>';
     });
+    runsListEl.innerHTML = html;
 
-    // [Apply Fix] — primary action
-    listEl.querySelectorAll('[data-apply-fix]').forEach(function (btn) {
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        var idx = parseInt(btn.getAttribute('data-apply-fix'), 10);
-        var issue = visible[idx];
-        if (!issue) return;
-        applyFix(issue, btn, function (result) {
-          // After apply, show push-pr + merge-local in the actions row
-          var actionsEl = document.getElementById('issue-actions-' + idx);
-          if (actionsEl) {
-            actionsEl.insertAdjacentHTML('beforeend',
-              '<button class="btn btn--push-pr" data-push-pr="' + idx + '" data-branch="' + escHtml(result.branch || '') + '">Push PR</button>' +
-              '<button class="btn btn--merge-local" data-merge-local="' + idx + '" data-branch="' + escHtml(result.branch || '') + '">Merge Local</button>'
-            );
-            wirePostActionBtns(actionsEl, issue);
-          }
-        });
-      });
-    });
-
-    // [View Diff] — secondary (was Copy patch)
-    listEl.querySelectorAll('[data-copy-patch]').forEach(function (btn) {
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        var idx = parseInt(btn.getAttribute('data-copy-patch'), 10);
-        var issue = visible[idx];
-        if (issue && issue.suggestedPatch) copyToClipboard(issue.suggestedPatch, btn);
-      });
-    });
-
-    listEl.querySelectorAll('[data-copy-path]').forEach(function (btn) {
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        var idx = parseInt(btn.getAttribute('data-copy-path'), 10);
-        var issue = visible[idx];
-        if (issue && issue.suggestedFixRegion) copyToClipboard(issue.suggestedFixRegion.file, btn);
-      });
-    });
-
-    listEl.querySelectorAll('[data-mark-fixed]').forEach(function (btn) {
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        markFixed(btn.getAttribute('data-mark-fixed'));
-        renderIssuesList(issuesData);
-      });
-    });
-
-    listEl.querySelectorAll('[data-snooze]').forEach(function (btn) {
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        snoozeIssue(btn.getAttribute('data-snooze'));
-        renderIssuesList(issuesData);
+    // keyboard navigation
+    runsListEl.querySelectorAll('.run-row').forEach(function (row) {
+      row.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); }
       });
     });
   }
 
-  function renderRunsTable(runs) {
-    var tbody = document.getElementById('runs-tbody');
-    if (!tbody) return;
-    if (!runs.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:1.5rem">No runs yet.</td></tr>';
+  function renderProjectList(projects, changesMap) {
+    var countEl = document.getElementById('projects-count');
+    if (countEl) countEl.textContent = projects.length;
+
+    // Populate filter dropdown
+    var filterEl = document.getElementById('project-filter');
+    if (filterEl && filterEl.options.length <= 1) {
+      projects.forEach(function (proj) {
+        var opt = document.createElement('option');
+        opt.value = proj.projectPath || '';
+        opt.textContent = proj.projectName;
+        filterEl.appendChild(opt);
+      });
+    }
+
+    if (projects.length === 0) {
+      projectList.innerHTML = '<div class="empty-state empty-state--compact">' +
+        '<div class="empty-state__heading">No projects yet</div>' +
+        '<div class="empty-state__desc">Projects appear automatically after the first run.</div>' +
+        '</div>';
       return;
     }
+
     var html = '';
-    runs.slice(0, 50).forEach(function (r) {
-      var runId = String(r.id || '');
-      var displayId = runId.length > 12 ? runId.slice(0, 12) + '…' : runId;
-      var status = (r.outcome || r.status || 'in-progress').toLowerCase();
-      html += '<tr onclick="location.href=\'/runs/' + encodeURIComponent(runId) + '\'">' +
-        '<td><span class="run-id-cell" title="' + escHtml(runId) + '">' + escHtml(displayId) + '</span></td>' +
-        '<td>' + escHtml(projectLabel(r.project_path || null)) + '</td>' +
-        '<td>' + pillHtml(status) + '</td>' +
-        '<td style="color:var(--text-dim);font-size:0.78rem">' + escHtml((r.tool || '').replace('tspr_', '').replace(/_/g, ' ')) + '</td>' +
-        '<td class="time-cell">' + escHtml(relativeTime(r.started_at)) + '</td>' +
-        '<td class="time-cell">' + escHtml(formatMs(r.duration_ms)) + '</td>' +
-        '</tr>';
+    projects.forEach(function (proj) {
+      var changes = changesMap[proj.projectPath] || null;
+
+      html += '<div class="project-card" data-project-path="' + escHtml(proj.projectPath || '') + '">';
+      html += '<div class="project-card__top">';
+      html += '<span class="project-card__status-dot">' + statusDot(proj.status) + '</span>';
+      html += '<span class="project-card__name">' + escHtml(proj.projectName) + '</span>';
+      html += pillHtml(proj.status);
+      html += '</div>';
+      html += '<div class="project-card__stats">' + proj.passingTests + ' / ' + proj.totalTests + ' passing';
+      if (proj.totalTests > 0) html += ' (' + pct(proj.passRate) + ')';
+      html += ' · ' + proj.runCount + ' run' + (proj.runCount !== 1 ? 's' : '');
+      html += '</div>';
+
+      // Changes column (TestSprite signature pattern)
+      html += '<div class="project-card__changes">';
+      if (changes && (changes.newlyBroken.length > 0 || changes.newlyRecovered.length > 0)) {
+        changes.newlyBroken.slice(0, 3).forEach(function (name) {
+          html += '<span class="change-chip change-chip--broken" title="' + escHtml(name) + '">+1 broken</span>';
+        });
+        changes.newlyRecovered.slice(0, 3).forEach(function (name) {
+          html += '<span class="change-chip change-chip--recovered" title="' + escHtml(name) + '">-1 broken</span>';
+        });
+        var overflow = (changes.newlyBroken.length - 3) + (changes.newlyRecovered.length - 3);
+        if (overflow > 0) {
+          html += '<span class="change-chip change-chip--overflow">+' + overflow + ' more</span>';
+        }
+      } else if (changes) {
+        html += '<span style="font-size:0.72rem;color:var(--text-dim)">No changes</span>';
+      } else {
+        // changes loading or single run — show delta from health
+        var delta = proj.delta;
+        if (delta > 0) {
+          html += '<span class="change-chip change-chip--recovered">+' + delta + ' recovered</span>';
+        } else if (delta < 0) {
+          html += '<span class="change-chip change-chip--broken">' + Math.abs(delta) + ' broken</span>';
+        } else {
+          html += '<span style="font-size:0.72rem;color:var(--text-dim)">—</span>';
+        }
+      }
+      html += '</div>';
+
+      html += '<div class="project-card__meta">';
+      html += '<span class="project-card__time">Last: ' + escHtml(relativeTime(proj.lastRunAt)) + '</span>';
+      html += '</div>';
+      html += '</div>';
     });
-    tbody.innerHTML = html;
+    projectList.innerHTML = html;
+
+    projectList.querySelectorAll('.project-card').forEach(function (card) {
+      card.addEventListener('click', function (e) {
+        if (e.target.tagName === 'A') return;
+        var pp = card.getAttribute('data-project-path');
+        showProjectPanel(pp, projects);
+      });
+    });
+  }
+
+  function loadChanges(projects) {
+    var changesMap = {};
+    var pending = projects.length;
+    if (pending === 0) return Promise.resolve(changesMap);
+    return new Promise(function (resolve) {
+      projects.forEach(function (proj) {
+        if (!proj.projectPath) { pending--; if (!pending) resolve(changesMap); return; }
+        fetch('/api/changes?project=' + encodeURIComponent(proj.projectPath))
+          .then(function (r) { return r.json(); })
+          .then(function (d) { changesMap[proj.projectPath] = d; })
+          .catch(function () { /* ignore, stub not yet available */ })
+          .finally(function () { pending--; if (!pending) resolve(changesMap); });
+      });
+    });
+  }
+
+  function load() {
+    Promise.all([
+      fetch('/api/runs').then(function (r) { return r.json(); }),
+      fetch('/api/projects').then(function (r) { return r.json(); }),
+    ]).then(function (results) {
+      allRuns = results[0];
+      var projects = results[1];
+
+      // Update live badge: count in-progress runs
+      var inProgress = allRuns.filter(function (r) { return (r.status || r.outcome) === 'in-progress'; }).length;
+      var liveBadge = document.getElementById('topbar-live');
+      if (liveBadge) {
+        if (inProgress > 0) {
+          liveBadge.style.display = '';
+          liveBadge.textContent = inProgress + ' run' + (inProgress !== 1 ? 's' : '') + ' in progress';
+        } else {
+          liveBadge.style.display = 'none';
+        }
+      }
+
+      renderRunsList();
+
+      // Load changes then render project cards
+      loadChanges(projects).then(function (changesMap) {
+        renderProjectList(projects, changesMap);
+      });
+    }).catch(function () {
+      var runsListEl = document.getElementById('runs-list');
+      if (runsListEl) runsListEl.innerHTML = '<div class="empty-state"><div class="empty-state__heading">Failed to load runs</div></div>';
+    });
   }
 
   function showProjectPanel(projectPath, allProjects) {
@@ -761,50 +781,46 @@ function wirePostActionBtns(actionsEl, issue) {
       c.classList.toggle('active', c.getAttribute('data-project-path') === projectPath);
     });
 
-    fetch('/api/runs').then(function (r) { return r.json(); }).then(function (runs) {
-      var projectRuns = runs.filter(function (r) { return r.project_path === projectPath; });
+    var projectRuns = allRuns.filter(function (r) { return r.project_path === projectPath; });
 
-      var bodyHtml = '<div class="run-meta">' +
-        '<div class="run-meta-item"><div class="run-meta-item__label">Status</div><div class="run-meta-item__value">' + pillHtml(proj.status) + '</div></div>' +
-        '<div class="run-meta-item"><div class="run-meta-item__label">Pass rate</div><div class="run-meta-item__value">' + pct(proj.passRate) + '</div></div>' +
-        '<div class="run-meta-item"><div class="run-meta-item__label">Last run</div><div class="run-meta-item__value">' + escHtml(relativeTime(proj.lastRunAt)) + '</div></div>' +
+    var bodyHtml = '<div class="run-meta">' +
+      '<div class="run-meta-item"><div class="run-meta-item__label">Status</div><div class="run-meta-item__value">' + pillHtml(proj.status) + '</div></div>' +
+      '<div class="run-meta-item"><div class="run-meta-item__label">Pass rate</div><div class="run-meta-item__value">' + pct(proj.passRate) + '</div></div>' +
+      '<div class="run-meta-item"><div class="run-meta-item__label">Last run</div><div class="run-meta-item__value">' + escHtml(relativeTime(proj.lastRunAt)) + '</div></div>' +
+      '</div>';
+
+    bodyHtml += '<div class="run-stats-bar">' +
+      '<div class="stat-badge total"><div class="stat-badge__num">' + proj.totalTests + '</div><div class="stat-badge__label">Total</div></div>' +
+      '<div class="stat-badge ok"><div class="stat-badge__num">' + proj.passingTests + '</div><div class="stat-badge__label">Passed</div></div>' +
+      '<div class="stat-badge fail"><div class="stat-badge__num">' + (proj.totalTests - proj.passingTests) + '</div><div class="stat-badge__label">Failed</div></div>' +
+      '</div>';
+
+    if (projectRuns.length > 0) {
+      bodyHtml += '<div class="section-title" style="margin-top:0.75rem">Run history</div>';
+      bodyHtml += '<div class="card"><table class="runs-table">' +
+        '<thead><tr><th>ID</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead><tbody>';
+      projectRuns.slice(0, 10).forEach(function (r) {
+        var runId = String(r.id);
+        var status = (r.outcome || r.status || 'in-progress').toLowerCase();
+        bodyHtml += '<tr style="cursor:pointer" onclick="location.href=\'/runs/' + encodeURIComponent(runId) + '\'">' +
+          '<td class="run-id-cell">' + escHtml(runId.slice(0, 10)) + '…</td>' +
+          '<td>' + pillHtml(status) + '</td>' +
+          '<td class="time-cell">' + escHtml(relativeTime(r.started_at)) + '</td>' +
+          '<td class="time-cell">' + escHtml(formatMs(r.duration_ms)) + '</td>' +
+          '</tr>';
+      });
+      bodyHtml += '</tbody></table></div>';
+    }
+
+    if (projectRuns.length >= 2) {
+      var lastId = String(projectRuns[0].id);
+      var prevId = String(projectRuns[1].id);
+      bodyHtml += '<div style="margin-top:0.75rem">' +
+        '<a class="btn" href="/compare?a=' + encodeURIComponent(prevId) + '&b=' + encodeURIComponent(lastId) + '">Compare last 2 runs →</a>' +
         '</div>';
+    }
 
-      bodyHtml += '<div class="run-stats-bar">' +
-        '<div class="stat-badge total"><div class="stat-badge__num">' + proj.totalTests + '</div><div class="stat-badge__label">Total</div></div>' +
-        '<div class="stat-badge ok"><div class="stat-badge__num">' + proj.passingTests + '</div><div class="stat-badge__label">Passed</div></div>' +
-        '<div class="stat-badge fail"><div class="stat-badge__num">' + (proj.totalTests - proj.passingTests) + '</div><div class="stat-badge__label">Failed</div></div>' +
-        '</div>';
-
-      if (projectRuns.length > 0) {
-        bodyHtml += '<div class="section-title" style="margin-top:0.75rem">Run history</div>';
-        bodyHtml += '<div class="card"><table class="runs-table">' +
-          '<thead><tr><th>ID</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead><tbody>';
-        projectRuns.slice(0, 10).forEach(function (r) {
-          var runId = String(r.id);
-          var status = (r.outcome || r.status || 'in-progress').toLowerCase();
-          bodyHtml += '<tr style="cursor:pointer" onclick="location.href=\'/runs/' + encodeURIComponent(runId) + '\'">' +
-            '<td class="run-id-cell">' + escHtml(runId.slice(0, 10)) + '…</td>' +
-            '<td>' + pillHtml(status) + '</td>' +
-            '<td class="time-cell">' + escHtml(relativeTime(r.started_at)) + '</td>' +
-            '<td class="time-cell">' + escHtml(formatMs(r.duration_ms)) + '</td>' +
-            '</tr>';
-        });
-        bodyHtml += '</tbody></table></div>';
-      }
-
-      if (projectRuns.length >= 2) {
-        var lastId = String(projectRuns[0].id);
-        var prevId = String(projectRuns[1].id);
-        bodyHtml += '<div style="margin-top:0.75rem">' +
-          '<a class="btn" href="/compare?a=' + encodeURIComponent(prevId) + '&b=' + encodeURIComponent(lastId) + '">Compare last 2 runs →</a>' +
-          '</div>';
-      }
-
-      openPanel(escHtml(proj.projectName), bodyHtml);
-    }).catch(function () {
-      openPanel(escHtml(proj.projectName), '<div class="empty-state"><div class="empty-state__heading">Failed to load runs</div></div>');
-    });
+    openPanel(escHtml(proj.projectName), bodyHtml);
   }
 
   load();
@@ -824,7 +840,6 @@ function wirePostActionBtns(actionsEl, issue) {
 
   var run = {}, results = [];
   try {
-    // data-run is HTML-escaped JSON; decode via textContent trick
     var tmp = document.createElement('div');
     tmp.innerHTML = runRoot.getAttribute('data-run') || '{}';
     run = JSON.parse(tmp.textContent || '{}');
@@ -835,27 +850,31 @@ function wirePostActionBtns(actionsEl, issue) {
     results = JSON.parse(tmp2.textContent || '[]');
   } catch (_) { results = []; }
 
-  // Render detail UI into the page
-  var container = document.createElement('div');
-
   var passed = 0, failed = 0, skipped = 0;
-  (results || []).forEach(function (r) {
+  results.forEach(function (r) {
     if (r.status === 'passed') passed++;
     else if (r.status === 'failed') failed++;
     else skipped++;
   });
   var total = results.length;
 
-  var html = '<div class="page-title">Run <span>' + escHtml(String(runId || '')) + '</span></div>';
+  // Render run header block
+  var headerEl = document.getElementById('run-header');
+  if (headerEl) {
+    var headerHtml = pillHtml(status || 'in-progress');
+    headerHtml += ' <span class="run-id-monospace">' + escHtml(String(runId || '')) + '</span>';
+    if (run.projectPath) headerHtml += ' <span style="color:var(--text-dim)">·</span> ' + escHtml(projectLabel(run.projectPath));
+    if (run.tool) headerHtml += ' <span style="color:var(--text-dim)">·</span> ' + escHtml(run.tool.replace('tspr_', '').replace(/_/g, ' '));
+    if (run.durationMs) headerHtml += ' <span style="color:var(--text-dim)">·</span> ' + escHtml(formatMs(run.durationMs));
+    if (run.startedAt) headerHtml += ' <span style="color:var(--text-dim)">·</span> ' + escHtml(relativeTime(run.startedAt));
+    headerEl.innerHTML = headerHtml;
+  }
 
-  html += '<div class="run-meta">' +
-    '<div class="run-meta-item"><div class="run-meta-item__label">Status</div><div class="run-meta-item__value">' + pillHtml(status || 'in-progress') + '</div></div>' +
-    '<div class="run-meta-item"><div class="run-meta-item__label">Project</div><div class="run-meta-item__value">' + escHtml(projectLabel(run.projectPath)) + '</div></div>' +
-    '<div class="run-meta-item"><div class="run-meta-item__label">Tool</div><div class="run-meta-item__value">' + escHtml((run.tool || '').replace('tspr_', '').replace(/_/g, ' ')) + '</div></div>' +
-    '<div class="run-meta-item"><div class="run-meta-item__label">Started</div><div class="run-meta-item__value">' + escHtml(relativeTime(run.startedAt)) + '</div></div>' +
-    '<div class="run-meta-item"><div class="run-meta-item__label">Duration</div><div class="run-meta-item__value">' + escHtml(formatMs(run.durationMs)) + '</div></div>' +
-    (run.errorCode ? '<div class="run-meta-item"><div class="run-meta-item__label">Error</div><div class="run-meta-item__value" style="color:var(--red)">' + escHtml(run.errorCode) + '</div></div>' : '') +
-    '</div>';
+  // Render stat badges
+  var scenarioSectionEl = document.getElementById('scenario-section');
+  if (!scenarioSectionEl) return;
+
+  var html = '';
 
   if (total > 0) {
     html += '<div class="run-stats-bar">' +
@@ -866,41 +885,47 @@ function wirePostActionBtns(actionsEl, issue) {
       '</div>';
   }
 
+  // Scenario list as primary content (all results in one list, failures first)
   if (results.length > 0) {
     var failedRows = results.filter(function (r) { return r.status === 'failed'; });
     var passedRows = results.filter(function (r) { return r.status === 'passed'; });
     var skippedRows = results.filter(function (r) { return r.status === 'skipped'; });
+    var ordered = failedRows.concat(passedRows).concat(skippedRows);
 
-    function renderRows(rows) {
-      return rows.map(function (r, i) {
-        var origIdx = results.indexOf(r);
-        return '<div class="test-row ' + escHtml(r.status) + '" data-result-idx="' + origIdx + '">' +
-          '<span class="test-row__name">' + escHtml(r.testName || r.testId) + '</span>' +
-          (r.durationMs ? '<span class="test-row__duration">' + formatMs(r.durationMs) + '</span>' : '') +
-          '</div>';
-      }).join('');
-    }
-
-    if (failedRows.length > 0) {
-      html += '<div class="section"><div class="section-title">Failures (' + failedRows.length + ')</div><div class="test-list">' + renderRows(failedRows) + '</div></div>';
-    }
-    if (passedRows.length > 0) {
-      html += '<div class="section"><div class="section-title">Passed (' + passedRows.length + ')</div><div class="test-list">' + renderRows(passedRows) + '</div></div>';
-    }
-    if (skippedRows.length > 0) {
-      html += '<div class="section"><div class="section-title">Skipped (' + skippedRows.length + ')</div><div class="test-list">' + renderRows(skippedRows) + '</div></div>';
-    }
+    html += '<div class="section"><div class="section-title">Scenarios (' + total + ')</div>';
+    html += '<div class="scenario-list">';
+    ordered.forEach(function (r) {
+      var origIdx = results.indexOf(r);
+      var icon = r.status === 'passed' ? '✅' : r.status === 'failed' ? '❌' : '⏭️';
+      html += '<div class="scenario-row ' + escHtml(r.status) + '" data-result-idx="' + origIdx + '" role="button" tabindex="0">';
+      html += '<span class="scenario-row__icon" aria-hidden="true">' + icon + '</span>';
+      html += '<span class="scenario-row__name">' + escHtml(r.testName || r.testId) + '</span>';
+      if (r.durationMs) html += '<span class="scenario-row__duration">' + formatMs(r.durationMs) + '</span>';
+      html += '</div>';
+    });
+    html += '</div></div>';
   } else {
     html += '<div class="empty-state"><div class="empty-state__desc">No test results for this run.</div></div>';
   }
 
-  container.innerHTML = html;
-  runRoot.appendChild(container);
+  scenarioSectionEl.innerHTML = html;
 
-  // Render transparency panel from test_results.json _timeline
-  // Try to load the test_results.json for this run from the project path
+  scenarioSectionEl.querySelectorAll('.scenario-row').forEach(function (row) {
+    var activate = function () {
+      var idx = parseInt(row.getAttribute('data-result-idx'), 10);
+      var result = results[idx];
+      if (!result) return;
+      showScenarioPanel(result);
+    };
+    row.addEventListener('click', activate);
+    row.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
+  });
+
+  // Transparency panel: ONLY rendered when ?dev=1 is in URL
+  var searchParams = new URLSearchParams(window.location.search);
+  var devMode = searchParams.get('dev') === '1';
   var tpContainer = document.getElementById('transparency-panel');
-  if (tpContainer && run.projectPath) {
+  if (devMode && tpContainer && run.projectPath) {
     var tsprDir = (run.projectPath.replace(/\\/g, '/')) + '/.tspr/test_results.json';
     fetch('/api/file?path=' + encodeURIComponent(tsprDir))
       .then(function (r) { return r.json(); })
@@ -908,17 +933,8 @@ function wirePostActionBtns(actionsEl, issue) {
         if (data && data.content) {
           renderTransparencyPanel(tpContainer, data.content);
         }
-      }).catch(function () { /* no transparency data available */ });
+      }).catch(function () {});
   }
-
-  container.querySelectorAll('.test-row').forEach(function (row) {
-    row.addEventListener('click', function () {
-      var idx = parseInt(row.getAttribute('data-result-idx'), 10);
-      var result = results[idx];
-      if (!result) return;
-      showTestPanel(result);
-    });
-  });
 
   if (status === 'in-progress') {
     var pollInterval = setInterval(function () {
@@ -933,30 +949,18 @@ function wirePostActionBtns(actionsEl, issue) {
     }, 3000);
   }
 
-  function showTestPanel(result) {
+  function showScenarioPanel(result) {
     var fix = result.suggestedFixRegion;
     var bodyHtml = '<div style="margin-bottom:0.75rem">' + pillHtml(result.status) + '</div>';
 
+    // Stack trace (collapsible)
     if (result.errorMessage) {
-      bodyHtml += '<div class="section-title">Error / stack trace</div>';
-      bodyHtml += '<pre style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.65rem;font-family:var(--font-mono);font-size:0.72rem;white-space:pre-wrap;max-height:200px;overflow-y:auto;margin-bottom:0.75rem">' + escHtml(result.errorMessage) + '</pre>';
+      bodyHtml += '<details class="scenario-details" open><summary class="section-title" style="cursor:pointer;user-select:none">Stack trace</summary>';
+      bodyHtml += '<pre style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.65rem;font-family:var(--font-mono);font-size:0.72rem;white-space:pre-wrap;max-height:200px;overflow-y:auto;margin-top:0.4rem;margin-bottom:0.75rem">' + escHtml(result.errorMessage) + '</pre>';
+      bodyHtml += '</details>';
     }
 
-    if (result.suggestedPatch) {
-      bodyHtml += '<div class="section-title">Suggested patch</div>';
-      bodyHtml += renderPatch(result.suggestedPatch);
-      bodyHtml += '<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap">';
-      if (result.issueId && run.projectPath) {
-        bodyHtml += '<button class="btn btn--apply-fix" id="run-apply-fix-btn" data-issue-id="' + escHtml(result.issueId || '') + '">Apply Fix</button>';
-      }
-      bodyHtml += '<button class="btn btn--view-diff" id="run-copy-patch-btn">View Diff / Copy</button>';
-      bodyHtml += '<button class="btn" id="run-apply-btn">CLI hint…</button>';
-      bodyHtml += '</div>';
-      bodyHtml += '<div id="run-apply-div" style="display:none;margin-top:0.5rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.65rem;font-family:var(--font-mono);font-size:0.72rem;color:var(--text)">';
-      bodyHtml += 'tspr apply-fix ' + escHtml(result.issueId || '&lt;issueId&gt;') + '\n# or git apply:\ngit apply the.patch';
-      bodyHtml += '</div>';
-    }
-
+    // Suggested fix region
     if (fix) {
       bodyHtml += '<div class="section-title" style="margin-top:0.75rem">Source file</div>';
       var fileLabel = fix.file;
@@ -968,25 +972,18 @@ function wirePostActionBtns(actionsEl, issue) {
       if (fix.lineEnd && fix.lineEnd !== fix.lineStart) bodyHtml += '–' + fix.lineEnd;
       bodyHtml += '</a>';
       bodyHtml += '</div>';
-
       if (fix.why) {
         bodyHtml += '<div class="issue-card__why">' + escHtml(fix.why) + '</div>';
       }
-
       var paneId = 'file-pane-run';
       bodyHtml += '<div id="' + paneId + '"><div style="color:var(--text-dim);font-size:0.75rem;padding:0.4rem">Loading…</div></div>';
-
-      // Load after panel opens
       setTimeout(function () {
         fetch('/api/file?path=' + encodeURIComponent(fix.file))
           .then(function (r) { return r.json(); })
           .then(function (data) {
             var pane = document.getElementById(paneId);
-            if (pane && data.content) {
-              pane.innerHTML = renderCodePane(data.content, fix.lineStart, fix.lineEnd);
-            } else if (pane) {
-              pane.innerHTML = '<div style="color:var(--text-dim);font-size:0.75rem">File not accessible (outside allowed paths).</div>';
-            }
+            if (pane && data.content) pane.innerHTML = renderCodePane(data.content, fix.lineStart, fix.lineEnd);
+            else if (pane) pane.innerHTML = '<div style="color:var(--text-dim);font-size:0.75rem">File not accessible.</div>';
           }).catch(function () {
             var pane = document.getElementById(paneId);
             if (pane) pane.innerHTML = '<div style="color:var(--text-dim);font-size:0.75rem">Could not load file.</div>';
@@ -994,23 +991,25 @@ function wirePostActionBtns(actionsEl, issue) {
       }, 80);
     }
 
+    // Suggested patch (diff colors)
+    if (result.suggestedPatch) {
+      bodyHtml += '<div class="section-title" style="margin-top:0.75rem">Suggested patch</div>';
+      bodyHtml += renderPatch(result.suggestedPatch);
+      bodyHtml += '<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap">';
+      if (result.issueId && run.projectPath) {
+        bodyHtml += '<button class="btn btn--apply-fix" id="run-apply-fix-btn" data-issue-id="' + escHtml(result.issueId || '') + '">Apply Fix</button>';
+      }
+      bodyHtml += '<button class="btn btn--view-diff" id="run-copy-patch-btn">Copy patch</button>';
+      bodyHtml += '</div>';
+    }
+
     openPanel(escHtml(result.testName || result.testId), bodyHtml);
 
     setTimeout(function () {
       var copyBtn = document.getElementById('run-copy-patch-btn');
       if (copyBtn) {
-        copyBtn.addEventListener('click', function () {
-          copyToClipboard(result.suggestedPatch, copyBtn);
-        });
+        copyBtn.addEventListener('click', function () { copyToClipboard(result.suggestedPatch, copyBtn); });
       }
-      var applyBtn = document.getElementById('run-apply-btn');
-      var applyDiv = document.getElementById('run-apply-div');
-      if (applyBtn && applyDiv) {
-        applyBtn.addEventListener('click', function () {
-          applyDiv.style.display = applyDiv.style.display === 'none' ? 'block' : 'none';
-        });
-      }
-      // [Apply Fix] button in run detail panel
       var applyFixBtn = document.getElementById('run-apply-fix-btn');
       if (applyFixBtn && run.projectPath) {
         applyFixBtn.addEventListener('click', function () {
@@ -1126,6 +1125,108 @@ function wirePostActionBtns(actionsEl, issue) {
     items.forEach(function (t) { html += '<div class="compare-test">' + escHtml(t.test_name || t.test_id) + '</div>'; });
     listEl.innerHTML = html;
   }
+})();
+
+// ── Settings page ─────────────────────────────────────────────────────────────
+
+(function initSettings() {
+  var form = document.getElementById('settings-form');
+  if (!form) return;
+
+  var DEFAULT_CONFIG = {
+    provider: 'claude-subprocess',
+    baseUrl: '',
+    apiKeyEnv: '',
+    models: { haiku: '', sonnet: '', opus: '' },
+  };
+
+  function getFormValues() {
+    var provider = (form.querySelector('input[name="provider"]:checked') || {}).value || 'claude-subprocess';
+    return {
+      provider: provider,
+      baseUrl: (document.getElementById('base-url') || {}).value || '',
+      apiKeyEnv: (document.getElementById('api-key-env') || {}).value || '',
+      models: {
+        haiku:  (document.getElementById('alias-haiku')  || {}).value || '',
+        sonnet: (document.getElementById('alias-sonnet') || {}).value || '',
+        opus:   (document.getElementById('alias-opus')   || {}).value || '',
+      },
+    };
+  }
+
+  function setFormValues(cfg) {
+    var providerInputs = form.querySelectorAll('input[name="provider"]');
+    providerInputs.forEach(function (inp) { inp.checked = inp.value === cfg.provider; });
+    var baseUrl = document.getElementById('base-url');
+    if (baseUrl) baseUrl.value = cfg.baseUrl || '';
+    var apiKeyEnv = document.getElementById('api-key-env');
+    if (apiKeyEnv) apiKeyEnv.value = cfg.apiKeyEnv || '';
+    var haikuEl = document.getElementById('alias-haiku');
+    if (haikuEl) haikuEl.value = (cfg.models && cfg.models.haiku) || '';
+    var sonnetEl = document.getElementById('alias-sonnet');
+    if (sonnetEl) sonnetEl.value = (cfg.models && cfg.models.sonnet) || '';
+    var opusEl = document.getElementById('alias-opus');
+    if (opusEl) opusEl.value = (cfg.models && cfg.models.opus) || '';
+    updateFieldVisibility();
+  }
+
+  function updateFieldVisibility() {
+    var provider = (form.querySelector('input[name="provider"]:checked') || {}).value || '';
+    var needsUrl = provider === 'openai-compat' || provider === 'minimax';
+    var fieldBase = document.getElementById('field-base-url');
+    var fieldKey  = document.getElementById('field-api-key-env');
+    var fieldAliases = document.getElementById('field-model-aliases');
+    if (fieldBase) fieldBase.style.display = needsUrl ? '' : 'none';
+    if (fieldKey) fieldKey.style.display = provider !== 'claude-subprocess' ? '' : 'none';
+    if (fieldAliases) fieldAliases.style.display = provider !== 'claude-subprocess' ? '' : 'none';
+  }
+
+  // Wire provider radio buttons
+  form.querySelectorAll('input[name="provider"]').forEach(function (inp) {
+    inp.addEventListener('change', updateFieldVisibility);
+  });
+
+  // Load current config from server
+  fetch('/api/settings')
+    .then(function (r) { return r.json(); })
+    .then(function (cfg) { setFormValues(cfg); })
+    .catch(function () { setFormValues(DEFAULT_CONFIG); });
+
+  // Reset button
+  var resetBtn = document.getElementById('reset-btn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', function () {
+      setFormValues(DEFAULT_CONFIG);
+    });
+  }
+
+  // Save
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var saveBtn = document.getElementById('save-btn');
+    var errEl = document.getElementById('settings-error');
+    if (saveBtn) { saveBtn.textContent = 'Saving…'; saveBtn.disabled = true; }
+    if (errEl) errEl.style.display = 'none';
+
+    var payload = getFormValues();
+
+    postJson('/api/settings', payload)
+      .then(function (r) {
+        if (saveBtn) { saveBtn.textContent = 'Save'; saveBtn.disabled = false; }
+        if (r.ok) {
+          showToast('✓ Settings saved', true);
+          // Reload from server to confirm effective config
+          fetch('/api/settings').then(function (res) { return res.json(); }).then(setFormValues).catch(function () {});
+        } else {
+          var msg = (r.body && r.body.error) ? r.body.error : 'Save failed';
+          if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+        }
+      })
+      .catch(function (err) {
+        if (saveBtn) { saveBtn.textContent = 'Save'; saveBtn.disabled = false; }
+        if (errEl) { errEl.textContent = 'Network error: ' + err.message; errEl.style.display = 'block'; }
+      });
+  });
 })();
 
 // ── Cost page ──────────────────────────────────────────────────────────────────

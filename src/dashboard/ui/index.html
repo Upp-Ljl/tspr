@@ -9,82 +9,58 @@
 <body>
 
 <header class="topbar">
-  <a class="topbar__brand" href="/">tspr<span>/dashboard</span></a>
-  <nav class="topbar__nav">
-    <a href="/" class="active">Overview</a>
-    <a href="/compare">Compare</a>
-    <a href="/cost">Cost</a>
-  </nav>
+  <a class="topbar__brand" href="/">tspr</a>
+  <div class="topbar__filter">
+    <select class="project-filter" id="project-filter" title="Filter by project">
+      <option value="">All projects ▾</option>
+    </select>
+  </div>
   <div class="topbar__right">
-    <span class="poll-dot" title="Live updates every 10s"></span>
+    <span class="topbar__live-badge" id="topbar-live" style="display:none"></span>
+    <a class="btn btn--icon" href="/settings" title="Settings" aria-label="Settings">
+      <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+    </a>
   </div>
 </header>
 
 <main class="page">
 
-  <!-- Quick stats row -->
-  <div class="stats-row" id="stats-row">
-    <div class="stat-tile"><div class="stat-tile__num" id="stat-runs">—</div><div class="stat-tile__label">Total Runs</div></div>
-    <div class="stat-tile"><div class="stat-tile__num" id="stat-tests">—</div><div class="stat-tile__label">Tests Run</div></div>
-    <div class="stat-tile"><div class="stat-tile__num" id="stat-pass-rate">—</div><div class="stat-tile__label">Avg Pass Rate</div></div>
-    <div class="stat-tile"><div class="stat-tile__num" id="stat-projects">—</div><div class="stat-tile__label">Projects</div></div>
-  </div>
-
-  <!-- Primary layout: issues main + projects sidebar -->
+  <!-- Two-column: Recent Runs (primary ~60%) + Projects with Changes (sidebar ~40%) -->
   <div class="home-layout">
 
-    <!-- Main: Issue triage (primary area) -->
+    <!-- LEFT: Recent Runs — always visible, no collapse toggle -->
     <div class="home-layout__main">
       <div class="section-header">
-        Active Issues <span class="section-header__count" id="issues-count">0</span>
+        Recent Runs
+        <span class="section-header__count" id="runs-count">0</span>
+        <span class="section-header__page" id="runs-pager" style="margin-left:auto;font-size:0.68rem;color:var(--text-dim)"></span>
       </div>
-      <div class="issues-list" id="issues-list">
-        <div class="empty-state">
-          <div class="empty-state__heading">No issues found</div>
-          <div class="empty-state__desc">All tests passing, or no runs yet.</div>
-        </div>
+
+      <div id="runs-list">
+        <div class="spinner-center"><div class="spinner"></div></div>
+      </div>
+
+      <div class="runs-pagination" id="runs-pagination" style="display:none">
+        <button class="btn" id="runs-prev" disabled>← Prev</button>
+        <button class="btn" id="runs-next">Next →</button>
       </div>
     </div>
 
-    <!-- Sidebar: Projects (narrower) -->
+    <!-- RIGHT: Project cards with Changes column -->
     <div class="home-layout__sidebar">
       <div class="section-header">
-        Projects <span class="section-header__count" id="projects-count">0</span>
+        Projects
+        <span class="section-header__count" id="projects-count">0</span>
       </div>
-      <div class="project-list" id="project-list">
-        <div class="empty-state empty-state--compact">
-          <div class="empty-state__heading">No runs yet</div>
-          <div class="empty-state__desc">tspr hasn't run yet.</div>
-          <pre class="empty-state__code">tspr mcp</pre>
-        </div>
+
+      <div id="project-list">
+        <!-- populated by app.js initHome -->
       </div>
     </div>
 
-  </div>
-
-  <!-- Run history (collapsed by default) -->
-  <div style="margin-top:2rem">
-    <div class="section-header" style="cursor:pointer" id="history-toggle">
-      Recent Runs <span class="section-header__count" id="history-count">0</span>
-      <span style="margin-left:auto;font-size:0.75rem;color:var(--text-dim)" id="history-caret">▼ show</span>
-    </div>
-    <div id="history-panel" style="display:none">
-      <div class="card">
-        <table class="runs-table">
-          <thead>
-            <tr>
-              <th>Run ID</th>
-              <th>Project</th>
-              <th>Status</th>
-              <th>Tool</th>
-              <th>Started</th>
-              <th>Duration</th>
-            </tr>
-          </thead>
-          <tbody id="runs-tbody"></tbody>
-        </table>
-      </div>
-    </div>
   </div>
 
 </main>
@@ -101,10 +77,9 @@
   </div>
 </aside>
 
-<script src="/app.js"></script>
-
-<!-- Apply-fix feedback toast -->
+<!-- Toast -->
 <div id="fix-toast" class="fix-toast" style="display:none"></div>
 
+<script src="/app.js"></script>
 </body>
 </html>
