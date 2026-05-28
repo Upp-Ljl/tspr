@@ -174,7 +174,7 @@ describe('apply-fix CLI: --no-commit', () => {
 });
 
 describe('apply-fix CLI: full apply (branch + commit)', () => {
-  it('creates branch and commits when patch is valid', async () => {
+  it('creates branch and commits when patch is valid (--no-open to skip VS Code)', async () => {
     const repoDir = await makeTmpGitRepo();
     try {
       const tsprDir = path.join(repoDir, '.tspr');
@@ -186,7 +186,7 @@ describe('apply-fix CLI: full apply (branch + commit)', () => {
       let stdoutOutput = '';
       const origWrite = process.stdout.write.bind(process.stdout);
       process.stdout.write = (s: string) => { stdoutOutput += s; return true; };
-      const code = await runApplyFixCommand([issueId, '--project', repoDir]);
+      const code = await runApplyFixCommand([issueId, '--project', repoDir, '--no-open']);
       process.stdout.write = origWrite;
 
       expect(code).toBe(0);
@@ -194,6 +194,94 @@ describe('apply-fix CLI: full apply (branch + commit)', () => {
       // File should be modified
       const content = fs.readFileSync(path.join(repoDir, 'app.ts'), 'utf-8');
       expect(content).toContain('fixed');
+    } finally {
+      cleanupRepo(repoDir);
+    }
+  });
+});
+
+// ─── Batch multi-ID tests ─────────────────────────────────────────────────────
+
+function makeTestResultsMulti(projectDir: string): {
+  results: Record<string, unknown>;
+  issueId1: string;
+  issueId2: string;
+} {
+  const testId1 = 'GET /api/foo returns 200';
+  const testId2 = 'GET /api/bar returns 200';
+  const id1 = computeStableIssueId(testId1, projectDir);
+  const id2 = computeStableIssueId(testId2, projectDir);
+  return {
+    issueId1: id1,
+    issueId2: id2,
+    results: {
+      status: 'partial',
+      failures: [
+        {
+          testId: testId1,
+          issueId: id1,
+          title: testId1,
+          suggestedPatch: [
+            '--- a/app.ts',
+            '+++ b/app.ts',
+            '@@ -1,1 +1,2 @@',
+            ' export const version = 1;',
+            '+// fixed foo',
+          ].join('\n') + '\n',
+          suggestedFixRegion: { file: 'app.ts', lineStart: 1, lineEnd: 1, why: 'test' },
+        },
+        {
+          testId: testId2,
+          issueId: id2,
+          title: testId2,
+          suggestedPatch: [
+            '--- a/app.ts',
+            '+++ b/app.ts',
+            '@@ -1,1 +1,3 @@',
+            ' export const version = 1;',
+            '+// fixed foo',
+            '+// fixed bar',
+          ].join('\n') + '\n',
+          suggestedFixRegion: { file: 'app.ts', lineStart: 1, lineEnd: 1, why: 'test2' },
+        },
+      ],
+    },
+  };
+}
+
+describe('apply-fix CLI: batch (multiple IDs)', () => {
+  it('returns 1 when one ID is not found', async () => {
+    const repoDir = await makeTmpGitRepo();
+    try {
+      const tsprDir = path.join(repoDir, '.tspr');
+      fs.mkdirSync(tsprDir, { recursive: true });
+      const results = makeTestResults(repoDir);
+      const issueId = (results.failures as Array<{ issueId: string }>)[0].issueId;
+      fs.writeFileSync(path.join(tsprDir, 'test_results.json'), JSON.stringify(results));
+
+      const code = await runApplyFixCommand([issueId, 'nonexistent999', '--project', repoDir]);
+      expect(code).toBe(1);
+    } finally {
+      cleanupRepo(repoDir);
+    }
+  });
+
+  it('dry-run with multiple IDs prints both IDs and returns 0', async () => {
+    const repoDir = await makeTmpGitRepo();
+    try {
+      const tsprDir = path.join(repoDir, '.tspr');
+      fs.mkdirSync(tsprDir, { recursive: true });
+      const { results, issueId1, issueId2 } = makeTestResultsMulti(repoDir);
+      fs.writeFileSync(path.join(tsprDir, 'test_results.json'), JSON.stringify(results));
+
+      let stdoutOutput = '';
+      const origWrite = process.stdout.write.bind(process.stdout);
+      process.stdout.write = (s: string) => { stdoutOutput += s; return true; };
+      const code = await runApplyFixCommand([issueId1, issueId2, '--dry-run', '--project', repoDir]);
+      process.stdout.write = origWrite;
+
+      expect(code).toBe(0);
+      expect(stdoutOutput).toContain('dry-run');
     } finally {
       cleanupRepo(repoDir);
     }

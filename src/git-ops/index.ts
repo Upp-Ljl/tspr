@@ -81,7 +81,8 @@ export type GitOpsErrorCode =
   | 'PR_CREATE_FAILED'
   | 'MERGE_CONFLICT'
   | 'MERGE_FAILED'
-  | 'CHECKOUT_FAILED';
+  | 'CHECKOUT_FAILED'
+  | 'DIRTY_WORKING_TREE';
 
 export class GitOpsError extends Error {
   code: GitOpsErrorCode;
@@ -251,6 +252,164 @@ export async function applyPatch(input: ApplyPatchInput): Promise<ApplyPatchResu
   }
 }
 
+// ─── Batch apply ──────────────────────────────────────────────────────────────
+
+export interface BatchPatchEntry {
+  issueId: string;
+  patch: string;
+  testTitle: string;
+}
+
+export interface BatchApplyInput {
+  /** Absolute path to the target project (NOT the tspr repo) */
+  projectPath: string;
+  /** Ordered list of patches to apply atomically */
+  patches: BatchPatchEntry[];
+  /** Branch name. If omitted, uses tspr/fix-batch-<N> */
+  branch?: string;
+  /** Commit message. If omitted, uses default batch message */
+  commitMessage?: string;
+  /** If true, apply patches but skip git branch/commit */
+  noCommit?: boolean;
+  opts?: GitOpsOptions;
+}
+
+/**
+ * Apply multiple patches as a single atomic git commit.
+ *
+ * Algorithm:
+ * 1. `git apply --check` every patch in sequence. If ANY fails → throw
+ *    PATCH_CHECK_FAILED without touching working tree.
+ * 2. Create branch.
+ * 3. `git apply` each patch.
+ * 4. `git add -A && git commit` with a single commit message.
+ *
+ * Backwards compat: existing `applyPatch` for single patches is unchanged.
+ */
+export async function batchApplyPatches(input: BatchApplyInput): Promise<ApplyPatchResult> {
+  const { projectPath, patches, noCommit = false } = input;
+  const opts = input.opts ?? {};
+  const dryRun = opts.dryRun ?? false;
+
+  if (patches.length === 0) {
+    return {
+      applied: false,
+      branch: '(no patches)',
+      files: [],
+      message: 'No patches provided',
+      dryRun,
+    };
+  }
+
+  rejectTsprRepo(projectPath);
+  await gitRevParse(projectPath);
+
+  const branchName = input.branch ?? `tspr/fix-batch-${patches.length}`;
+  const commitMsg = input.commitMessage ?? `fix: tspr batch — ${patches.length} issues applied`;
+
+  if (dryRun) {
+    return {
+      applied: false,
+      branch: branchName,
+      files: [],
+      message: `[dry-run] would apply ${patches.length} patches and create branch ${branchName}`,
+      dryRun: true,
+    };
+  }
+
+  // Write all patches to temp files
+  const tmpFiles: string[] = [];
+  try {
+    for (const p of patches) {
+      const tmpPath = path.join(projectPath, `.tspr-patch-${p.issueId.slice(0, 8)}.patch`);
+      fs.writeFileSync(tmpPath, p.patch, 'utf-8');
+      tmpFiles.push(tmpPath);
+    }
+
+    // Phase 1: --check all patches. Abort immediately on first failure.
+    for (let idx = 0; idx < patches.length; idx++) {
+      try {
+        await git(projectPath, ['apply', '--check', tmpFiles[idx]]);
+      } catch (err) {
+        const p = patches[idx];
+        throw new GitOpsError(
+          'PATCH_CHECK_FAILED',
+          `Patch ${idx + 1}/${patches.length} (${p.issueId.slice(0, 12)} — ${p.testTitle}) failed --check: ${String(err)}`,
+        );
+      }
+    }
+
+    if (noCommit) {
+      // Apply all patches without branching
+      for (let idx = 0; idx < patches.length; idx++) {
+        try {
+          await git(projectPath, ['apply', tmpFiles[idx]]);
+        } catch (err) {
+          throw new GitOpsError('PATCH_APPLY_FAILED', `Patch ${idx + 1} failed apply: ${String(err)}`);
+        }
+      }
+      let files: string[] = [];
+      try {
+        const { stdout } = await git(projectPath, ['diff', '--name-only']);
+        files = stdout.split('\n').filter(Boolean);
+      } catch { /* ignore */ }
+      return {
+        applied: true,
+        branch: '(no-commit mode)',
+        files,
+        message: `${patches.length} patches applied (--no-commit mode)`,
+        dryRun: false,
+      };
+    }
+
+    // Phase 2: create branch
+    try {
+      await git(projectPath, ['checkout', '-b', branchName]);
+    } catch (err) {
+      throw new GitOpsError('BRANCH_CREATE_FAILED', String(err));
+    }
+
+    // Phase 3: apply all patches
+    for (let idx = 0; idx < patches.length; idx++) {
+      try {
+        await git(projectPath, ['apply', tmpFiles[idx]]);
+      } catch (err) {
+        // Roll back
+        try { await git(projectPath, ['checkout', '-']); } catch { /* ignore */ }
+        try { await git(projectPath, ['branch', '-D', branchName]); } catch { /* ignore */ }
+        throw new GitOpsError('PATCH_APPLY_FAILED', `Patch ${idx + 1} failed apply: ${String(err)}`);
+      }
+    }
+
+    // Phase 4: stage + single commit
+    let files: string[] = [];
+    try {
+      await git(projectPath, ['add', '-A']);
+      const { stdout } = await git(projectPath, ['diff', '--cached', '--name-only']);
+      files = stdout.split('\n').filter(Boolean);
+      await git(projectPath, ['commit', '-m', commitMsg]);
+    } catch (err) {
+      throw new GitOpsError('COMMIT_FAILED', String(err));
+    }
+
+    let commitSha: string | undefined;
+    try { commitSha = await gitCurrentSha(projectPath); } catch { /* ignore */ }
+
+    return {
+      applied: true,
+      branch: branchName,
+      commitSha,
+      files,
+      message: `${patches.length} patches applied and committed to branch ${branchName} (${commitSha?.slice(0, 8) ?? '?'})`,
+      dryRun: false,
+    };
+  } finally {
+    for (const f of tmpFiles) {
+      try { fs.unlinkSync(f); } catch { /* ignore */ }
+    }
+  }
+}
+
 // ─── Push PR ───────────────────────────────────────────────────────────────────
 
 export async function pushPr(input: {
@@ -269,11 +428,14 @@ export async function pushPr(input: {
     return { branch, prUrl: undefined, gh_missing: false };
   }
 
-  // Check gh is available
+  // Check gh is available — throw clear error if not
   try {
     await execFileAsync('gh', ['--version'], { timeout: 5000 });
   } catch {
-    return { branch, gh_missing: true };
+    throw new GitOpsError(
+      'GH_NOT_FOUND',
+      'GitHub CLI (gh) is not installed or not in PATH. Install it: https://cli.github.com',
+    );
   }
 
   // Push branch first
@@ -314,6 +476,20 @@ export async function mergeLocal(input: {
     return { merged: false, branch, base };
   }
 
+  // Ensure clean working tree before merge
+  try {
+    const { stdout } = await git(projectPath, ['status', '--porcelain']);
+    if (stdout.trim().length > 0) {
+      throw new GitOpsError(
+        'DIRTY_WORKING_TREE',
+        `Working tree is dirty (uncommitted changes). Stash or commit before merging.\n${stdout}`,
+      );
+    }
+  } catch (err) {
+    if (err instanceof GitOpsError) throw err;
+    // If git status fails, proceed — rare edge case
+  }
+
   // Checkout base
   try {
     await git(projectPath, ['checkout', base]);
@@ -326,12 +502,30 @@ export async function mergeLocal(input: {
     await git(projectPath, ['merge', '--no-ff', branch, '-m', `Merge ${branch} into ${base} (tspr auto-fix)`]);
   } catch (err) {
     const msg = String(err);
-    if (msg.includes('CONFLICT')) {
+
+    // Detect conflicts: check git status for unmerged files (UU, AA, DD, etc.)
+    let hasConflict = msg.includes('CONFLICT');
+    if (!hasConflict) {
+      try {
+        const { stdout: statusOut } = await git(projectPath, ['status', '--porcelain']);
+        // Unmerged files start with UU, AA, DD, AU, UA, DU, UD
+        hasConflict = statusOut.split('\n').some((line) => /^(UU|AA|DD|AU|UA|DU|UD)/.test(line));
+      } catch { /* ignore */ }
+    }
+
+    if (hasConflict) {
       // Get conflict list
       let conflicts: string[] = [];
       try {
         const { stdout } = await git(projectPath, ['diff', '--name-only', '--diff-filter=U']);
         conflicts = stdout.split('\n').filter(Boolean);
+        if (conflicts.length === 0) {
+          // Fallback: parse from status
+          const { stdout: s } = await git(projectPath, ['status', '--porcelain']);
+          conflicts = s.split('\n')
+            .filter((l) => /^(UU|AA|DD|AU|UA|DU|UD)/.test(l))
+            .map((l) => l.slice(3).trim());
+        }
       } catch { /* ignore */ }
       // Abort the merge
       try { await git(projectPath, ['merge', '--abort']); } catch { /* ignore */ }
