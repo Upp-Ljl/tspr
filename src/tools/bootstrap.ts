@@ -3,6 +3,10 @@
  *
  * Session entry point. Validates project path, detects project type,
  * checks Docker, writes session record to SQLite.
+ *
+ * previewOnly mode (default false): detects framework, loads existing test
+ * plans, estimates cost/duration, and returns the scenario list without
+ * writing any DB rows or spawning subprocesses.
  */
 import { z } from 'zod';
 import * as fs from 'node:fs';
@@ -17,9 +21,20 @@ export const bootstrapInputSchema = z.object({
   type: z.enum(['frontend', 'backend']),
   projectPath: z.string(),
   testScope: z.enum(['codebase', 'diff']),
+  previewOnly: z.boolean().default(false),
 });
 
 type BootstrapInput = z.infer<typeof bootstrapInputSchema>;
+
+// ─── Scenario shape used in previewOnly output ────────────────────────────────
+
+export interface PreviewScenario {
+  id: string;
+  title: string;
+  kind: string;
+}
+
+// ─── Framework detection ──────────────────────────────────────────────────────
 
 function detectFramework(projectPath: string, type: string): { projectType: string; framework: string } {
   let pkgJson: Record<string, unknown> = {};
@@ -61,9 +76,67 @@ function detectFramework(projectPath: string, type: string): { projectType: stri
   return { projectType, framework };
 }
 
+// ─── Test plan loading for previewOnly ───────────────────────────────────────
+
+interface StoredTestPlan {
+  scenarios?: Array<{ id?: string; title?: string; kind?: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+}
+
+function loadScenariosFromPlan(planPath: string): PreviewScenario[] {
+  try {
+    const raw = fs.readFileSync(planPath, 'utf-8');
+    const plan = JSON.parse(raw) as StoredTestPlan;
+    if (!Array.isArray(plan.scenarios)) return [];
+    return plan.scenarios.map((s, i) => ({
+      id: String(s.id ?? `scenario-${i}`),
+      title: String(s.title ?? `Scenario ${i}`),
+      kind: String(s.kind ?? 'unknown'),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function loadExistingScenarios(projectPath: string): { scenarios: PreviewScenario[]; warnings: string[] } {
+  const backendPlanPath = path.join(projectPath, '.tspr', 'backend_test_plan.json');
+  const frontendPlanPath = path.join(projectPath, '.tspr', 'frontend_test_plan.json');
+
+  const warnings: string[] = [];
+  let scenarios: PreviewScenario[] = [];
+
+  const backendScenarios = loadScenariosFromPlan(backendPlanPath);
+  const frontendScenarios = loadScenariosFromPlan(frontendPlanPath);
+
+  scenarios = [...backendScenarios, ...frontendScenarios];
+
+  if (scenarios.length === 0) {
+    warnings.push('No existing test plans found in .tspr/. Run without previewOnly to generate plans.');
+  }
+
+  return { scenarios, warnings };
+}
+
+// ─── Cost/duration estimation ─────────────────────────────────────────────────
+
+/**
+ * Rough placeholder heuristic. Real cost depends on model, token count, etc.
+ * Users can refine this later.
+ *   estimatedCostUsd ≈ scenarios.length * 0.005
+ *   estimatedDurationS ≈ scenarios.length * 3
+ */
+function estimateCost(scenarioCount: number): { estimatedCostUsd: number; estimatedDurationS: number } {
+  return {
+    estimatedCostUsd: scenarioCount * 0.005,
+    estimatedDurationS: scenarioCount * 3,
+  };
+}
+
+// ─── Handler ──────────────────────────────────────────────────────────────────
+
 async function bootstrapHandler(args: unknown, ctx: ServerContext): Promise<ToolResult> {
   const input = args as BootstrapInput;
-  const { projectPath, type } = input;
+  const { projectPath, type, previewOnly } = input;
 
   // Validate project path exists
   if (!fs.existsSync(projectPath)) {
@@ -91,6 +164,31 @@ async function bootstrapHandler(args: unknown, ctx: ServerContext): Promise<Tool
     );
   }
 
+  const { projectType, framework } = detectFramework(projectPath, type);
+
+  // ── previewOnly: no DB writes, no Docker check, no subprocesses ──────────
+  if (previewOnly) {
+    const { scenarios, warnings } = loadExistingScenarios(projectPath);
+    const { estimatedCostUsd, estimatedDurationS } = estimateCost(scenarios.length);
+
+    const output = {
+      status: 'ok',
+      preview: true,
+      projectType,
+      detectedFramework: framework,
+      scenarios,
+      estimatedCostUsd,
+      estimatedDurationS,
+      warnings,
+    };
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(output) }],
+    };
+  }
+
+  // ── Normal flow ───────────────────────────────────────────────────────────
+
   // Check Docker daemon (only when DockerManager is injected; production relies on sandbox internals)
   if (ctx.docker) {
     try {
@@ -108,7 +206,6 @@ async function bootstrapHandler(args: unknown, ctx: ServerContext): Promise<Tool
   }
 
   const sessionId = crypto.randomUUID();
-  const { projectType, framework } = detectFramework(projectPath, type);
   const warnings: string[] = [];
 
   const createdAt = new Date().toISOString();
@@ -162,7 +259,7 @@ async function bootstrapHandler(args: unknown, ctx: ServerContext): Promise<Tool
 export const bootstrapTool: ToolDefinition = {
   name: 'tspr_bootstrap_tests',
   description:
-    'Session entry point. Validates the project path, detects project type, checks Docker, and writes a session record. Returns next-action instructions.',
+    'Session entry point. Validates the project path, detects project type, checks Docker, and writes a session record. Returns next-action instructions. Pass previewOnly: true to estimate cost/scenarios without writing DB rows.',
   inputSchema: bootstrapInputSchema,
   handler: bootstrapHandler,
 };
