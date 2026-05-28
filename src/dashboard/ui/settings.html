@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tspr — Settings</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <a class="topbar__brand" href="/">tspr</a>
+  <div class="topbar__right">
+    <!-- no settings icon on settings page itself -->
+  </div>
+</header>
+
+<main class="page settings-page">
+  <a class="back-link" href="/">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Back to dashboard
+  </a>
+
+  <h1 class="settings-heading">Settings</h1>
+
+  <form id="settings-form" class="settings-form" novalidate>
+
+    <!-- Provider -->
+    <fieldset class="settings-fieldset">
+      <legend class="settings-legend">Provider</legend>
+      <label class="settings-radio">
+        <input type="radio" name="provider" value="claude-subprocess" />
+        <span class="settings-radio__label">Claude subprocess <span class="settings-radio__hint">(claude CLI, no key needed)</span></span>
+      </label>
+      <label class="settings-radio">
+        <input type="radio" name="provider" value="openai-compat" />
+        <span class="settings-radio__label">OpenAI-compatible <span class="settings-radio__hint">(custom endpoint)</span></span>
+      </label>
+      <label class="settings-radio">
+        <input type="radio" name="provider" value="minimax" />
+        <span class="settings-radio__label">MiniMax</span>
+      </label>
+    </fieldset>
+
+    <!-- Base URL (shown only for openai-compat / minimax) -->
+    <div class="settings-field" id="field-base-url">
+      <label class="settings-label" for="base-url">Base URL</label>
+      <input class="settings-input" type="url" id="base-url" name="baseUrl"
+        placeholder="https://api.minimaxi.com/v1" autocomplete="off" />
+    </div>
+
+    <!-- API key env var name -->
+    <div class="settings-field" id="field-api-key-env">
+      <label class="settings-label" for="api-key-env">API key environment variable name</label>
+      <input class="settings-input" type="text" id="api-key-env" name="apiKeyEnv"
+        placeholder="MINIMAX_API_KEY" autocomplete="off" spellcheck="false" />
+      <p class="settings-hint">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true" style="vertical-align:-2px;margin-right:3px">
+          <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M8 7v4M8 5.5v.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        The actual key value never enters this UI. Set the env var in your shell before starting tspr.
+      </p>
+    </div>
+
+    <!-- Model aliases -->
+    <fieldset class="settings-fieldset" id="field-model-aliases">
+      <legend class="settings-legend">Model aliases</legend>
+      <div class="settings-alias-grid">
+        <label class="settings-alias-label" for="alias-haiku">haiku</label>
+        <span class="settings-alias-arrow">→</span>
+        <input class="settings-input settings-alias-input" type="text" id="alias-haiku"
+          name="aliasHaiku" placeholder="claude-haiku-4-5" autocomplete="off" spellcheck="false" />
+
+        <label class="settings-alias-label" for="alias-sonnet">sonnet</label>
+        <span class="settings-alias-arrow">→</span>
+        <input class="settings-input settings-alias-input" type="text" id="alias-sonnet"
+          name="aliasSonnet" placeholder="claude-sonnet-4-5" autocomplete="off" spellcheck="false" />
+
+        <label class="settings-alias-label" for="alias-opus">opus</label>
+        <span class="settings-alias-arrow">→</span>
+        <input class="settings-input settings-alias-input" type="text" id="alias-opus"
+          name="aliasOpus" placeholder="claude-opus-4-5" autocomplete="off" spellcheck="false" />
+      </div>
+    </fieldset>
+
+    <!-- Actions -->
+    <div class="settings-actions">
+      <button type="submit" class="btn btn--accent" id="save-btn">Save</button>
+      <button type="button" class="btn" id="reset-btn">Reset to defaults</button>
+    </div>
+
+    <!-- Inline error -->
+    <div id="settings-error" class="settings-error" style="display:none"></div>
+
+  </form>
+</main>
+
+<!-- Toast (bottom-right, auto-fade 3s) -->
+<div id="fix-toast" class="fix-toast" style="display:none"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
