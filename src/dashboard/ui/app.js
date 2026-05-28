@@ -543,6 +543,160 @@ function wirePostActionBtns(actionsEl, issue) {
   });
 }
 
+// ── Onboarding overlay ─────────────────────────────────────────────────────────
+
+/**
+ * Fetch /api/onboarding-state. If seen===false, inject the overlay HTML into <body>
+ * and wire up dismiss/close actions → POST /api/onboarding-dismiss.
+ * Respects ?onboarding=fresh query param for testing.
+ */
+function initOnboarding() {
+  var searchParams = new URLSearchParams(window.location.search);
+  var freshMode = searchParams.get('onboarding') === 'fresh';
+  var stateUrl = freshMode
+    ? '/api/onboarding-state?onboarding=fresh'
+    : '/api/onboarding-state';
+
+  fetch(stateUrl)
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data && data.seen === false) {
+        showOnboardingOverlay();
+      }
+    })
+    .catch(function () { /* no overlay on error */ });
+}
+
+function showOnboardingOverlay() {
+  // Fetch the onboarding.html template and inject it
+  fetch('/onboarding.html')
+    .then(function (r) { return r.text(); })
+    .then(function (html) {
+      var wrapper = document.createElement('div');
+      wrapper.innerHTML = html;
+      document.body.appendChild(wrapper);
+      wireOnboardingOverlay();
+    })
+    .catch(function () {
+      // Fallback: render minimal inline overlay if fetch fails
+      renderInlineOnboarding();
+    });
+}
+
+function renderInlineOnboarding() {
+  var overlay = document.createElement('div');
+  overlay.id = 'onboarding-overlay';
+  overlay.className = 'onboarding-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.innerHTML =
+    '<div class="onboarding-modal" id="onboarding-modal">' +
+    '<div class="onboarding-modal__header">' +
+    '<div class="onboarding-modal__title">Welcome to tspr</div>' +
+    '<button class="onboarding-modal__close" id="onboarding-close" aria-label="Dismiss">✕</button>' +
+    '</div>' +
+    '<div class="onboarding-steps">' +
+    '<div class="onboarding-step"><div class="onboarding-step__num">1</div>' +
+    '<div class="onboarding-step__body"><div class="onboarding-step__title">Install tspr in Claude Code</div>' +
+    '<code class="onboarding-step__code">claude mcp add tspr -- node /path/to/dist/cli/index.js mcp</code></div></div>' +
+    '<div class="onboarding-step"><div class="onboarding-step__num">2</div>' +
+    '<div class="onboarding-step__body"><div class="onboarding-step__title">Configure your LLM</div>' +
+    '<div class="onboarding-step__desc">Open <a class="issue-card__file-link" href="/settings">Settings</a> to set provider + model alias.</div></div></div>' +
+    '<div class="onboarding-step"><div class="onboarding-step__num">3</div>' +
+    '<div class="onboarding-step__body"><div class="onboarding-step__title">Run your first test</div>' +
+    '<code class="onboarding-step__code">Use tspr to test my project at /path/to/my-app</code></div></div>' +
+    '</div>' +
+    '<div class="onboarding-modal__footer">' +
+    '<button class="btn" id="onboarding-dismiss-btn">Dismiss</button>' +
+    '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  wireOnboardingOverlay();
+}
+
+function wireOnboardingOverlay() {
+  function dismiss() {
+    var overlay = document.getElementById('onboarding-overlay');
+    if (overlay) overlay.remove();
+    // Persist to server
+    fetch('/api/onboarding-dismiss', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .catch(function () { /* ignore — already dismissed in DOM */ });
+  }
+
+  var closeBtn = document.getElementById('onboarding-close');
+  if (closeBtn) closeBtn.addEventListener('click', dismiss);
+
+  var dismissBtn = document.getElementById('onboarding-dismiss-btn');
+  if (dismissBtn) dismissBtn.addEventListener('click', dismiss);
+
+  // Click outside modal dismisses
+  var overlay = document.getElementById('onboarding-overlay');
+  if (overlay) {
+    overlay.addEventListener('click', function (e) {
+      var modal = document.getElementById('onboarding-modal');
+      if (modal && !modal.contains(e.target)) dismiss();
+    });
+  }
+
+  // ESC key dismisses
+  document.addEventListener('keydown', function onboardingEsc(e) {
+    if (e.key === 'Escape') {
+      dismiss();
+      document.removeEventListener('keydown', onboardingEsc);
+    }
+  });
+}
+
+// ── Scenario replay timeline ───────────────────────────────────────────────────
+
+/**
+ * Build the HTML for a scenario's replay timeline from its events array.
+ * @param {Array} events — ScenarioReplayEvent[] from test_results.json failure.events
+ * @returns {string} HTML string ready to inject
+ */
+function buildReplayTimelineHtml(events) {
+  if (!events || events.length === 0) return '';
+
+  var colorMap = {
+    'http-request':  'http-request',
+    'http-response': 'http-response',
+    'console':       'console',
+    'assertion':     'assertion',
+    'navigation':    'navigation',
+  };
+
+  var html = '<div class="replay-section">';
+  html += '<div class="replay-section__title">Step Replay</div>';
+  html += '<div class="replay-timeline">';
+
+  events.forEach(function (ev) {
+    var kindClass = colorMap[ev.kind] || 'console';
+    var tsLabel = ev.ts != null ? (ev.ts === 0 ? '0ms' : '+' + ev.ts + 'ms') : '';
+    html += '<div class="replay-event replay-event--' + escHtml(kindClass) + '">';
+    html += '<span class="replay-event__dot replay-event__dot--' + escHtml(kindClass) + '" title="' + escHtml(ev.kind) + '"></span>';
+    html += '<span class="replay-event__ts">' + escHtml(tsLabel) + '</span>';
+    html += '<span class="replay-event__detail">' + escHtml(ev.detail || '') + '</span>';
+    html += '</div>';
+  });
+
+  html += '</div></div>'; // timeline, section
+  return html;
+}
+
+/**
+ * Build the HTML for an inline failure screenshot.
+ * @param {string|null} screenshotBase64 — base64 PNG or null
+ * @returns {string} HTML string or empty string if no screenshot
+ */
+function buildScreenshotHtml(screenshotBase64) {
+  if (!screenshotBase64) return '';
+  return '<div class="failure-screenshot">' +
+    '<img class="failure-screenshot__img" src="data:image/png;base64,' + escHtml(screenshotBase64) + '"' +
+    ' alt="Failure screenshot" onclick="this.classList.toggle(\'zoomed\')" />' +
+    '<div class="failure-screenshot__label">Failure screenshot (click to zoom)</div>' +
+    '</div>';
+}
+
 // ── Home page ──────────────────────────────────────────────────────────────────
 
 (function initHome() {
@@ -825,6 +979,9 @@ function wirePostActionBtns(actionsEl, issue) {
 
   load();
   setInterval(load, 10000);
+
+  // Show onboarding overlay on first visit to home page
+  initOnboarding();
 })();
 
 // ── Run detail page ────────────────────────────────────────────────────────────
@@ -953,11 +1110,21 @@ function wirePostActionBtns(actionsEl, issue) {
     var fix = result.suggestedFixRegion;
     var bodyHtml = '<div style="margin-bottom:0.75rem">' + pillHtml(result.status) + '</div>';
 
+    // Screenshot (if present, shown at top)
+    if (result.screenshotBase64) {
+      bodyHtml += buildScreenshotHtml(result.screenshotBase64);
+    }
+
     // Stack trace (collapsible)
     if (result.errorMessage) {
       bodyHtml += '<details class="scenario-details" open><summary class="section-title" style="cursor:pointer;user-select:none">Stack trace</summary>';
       bodyHtml += '<pre style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:0.65rem;font-family:var(--font-mono);font-size:0.72rem;white-space:pre-wrap;max-height:200px;overflow-y:auto;margin-top:0.4rem;margin-bottom:0.75rem">' + escHtml(result.errorMessage) + '</pre>';
       bodyHtml += '</details>';
+    }
+
+    // Step replay timeline (events from result)
+    if (result.events && result.events.length > 0) {
+      bodyHtml += buildReplayTimelineHtml(result.events);
     }
 
     // Suggested fix region

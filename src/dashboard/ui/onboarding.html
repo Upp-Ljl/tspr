@@ -1,0 +1,59 @@
+<!-- onboarding.html — inline template for the onboarding overlay -->
+<!-- Rendered via JS into a <div> inserted into <body>; not a standalone page -->
+<div class="onboarding-overlay" id="onboarding-overlay" role="dialog" aria-modal="true" aria-label="Getting started with tspr">
+  <div class="onboarding-modal" id="onboarding-modal">
+    <div class="onboarding-modal__header">
+      <span class="onboarding-badge">
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M6 4v3M6 8.5v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        Getting started
+      </span>
+      <div class="onboarding-modal__title">Welcome to tspr</div>
+      <button class="onboarding-modal__close" id="onboarding-close" aria-label="Dismiss">✕</button>
+    </div>
+
+    <div class="onboarding-steps">
+      <!-- Step 1: Install tspr in cc -->
+      <div class="onboarding-step">
+        <div class="onboarding-step__num" aria-hidden="true">1</div>
+        <div class="onboarding-step__body">
+          <div class="onboarding-step__title">Install tspr in Claude Code</div>
+          <div class="onboarding-step__desc">Register tspr as an MCP server in your IDE:</div>
+          <code class="onboarding-step__code">claude mcp add tspr -- node /path/to/dist/cli/index.js mcp</code>
+        </div>
+      </div>
+
+      <!-- Step 2: Configure provider/key -->
+      <div class="onboarding-step">
+        <div class="onboarding-step__num" aria-hidden="true">2</div>
+        <div class="onboarding-step__body">
+          <div class="onboarding-step__title">Configure your LLM provider</div>
+          <div class="onboarding-step__desc">
+            Open <a class="issue-card__file-link" href="/settings">Settings →</a> to set your provider and model aliases.
+            By default tspr uses <code style="font-family:var(--font-mono);font-size:0.78em">claude-subprocess</code>
+            (no API key needed if Claude Code is already authenticated).
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: Run first test -->
+      <div class="onboarding-step">
+        <div class="onboarding-step__num" aria-hidden="true">3</div>
+        <div class="onboarding-step__body">
+          <div class="onboarding-step__title">Run your first test</div>
+          <div class="onboarding-step__desc">Ask Claude Code (cc) to test your project:</div>
+          <code class="onboarding-step__code">Use tspr to test my project at /path/to/my-app</code>
+          <div class="onboarding-step__desc" style="margin-top:0.4rem">
+            tspr will auto-generate tests, run them in a Docker sandbox, and surface failures with suggested fixes here.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="onboarding-modal__footer">
+      <button class="btn" id="onboarding-dismiss-btn">Dismiss</button>
+    </div>
+  </div>
+</div>

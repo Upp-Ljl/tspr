@@ -704,6 +704,20 @@ function handlePost(
       return;
     }
 
+    // ── POST /api/onboarding-dismiss ─────────────────────────────────────────
+    if (urlPath === '/api/onboarding-dismiss') {
+      const onboardingPath = path.join(os.homedir(), '.tspr', 'onboarding.json');
+      try {
+        const dir = path.dirname(onboardingPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(onboardingPath, JSON.stringify({ seen: true }, null, 2), 'utf-8');
+        sendJson(res, 200, { ok: true });
+      } catch (err) {
+        sendJson(res, 500, { error: `Failed to write onboarding state: ${String(err)}` });
+      }
+      return;
+    }
+
     sendJson(res, 404, { error: 'POST route not found' });
   };
 
@@ -723,6 +737,7 @@ function makeHandler(
   compareTemplate: string,
   costTemplate: string,
   settingsTemplate: string,
+  onboardingTemplate: string,
   extraAllowedPaths: string[],
 ) {
   // ── Body reader ───────────────────────────────────────────────────────────
@@ -762,6 +777,11 @@ function makeHandler(
 
     if (urlPath === '/app.js') {
       send(res, 200, 'application/javascript; charset=utf-8', jsContent);
+      return;
+    }
+
+    if (urlPath === '/onboarding.html') {
+      send(res, 200, 'text/html; charset=utf-8', onboardingTemplate);
       return;
     }
 
@@ -1093,6 +1113,49 @@ function makeHandler(
       return;
     }
 
+    // ── GET /api/onboarding-state ─────────────────────────────────────────
+    if (urlPath === '/api/onboarding-state' || urlPath === '/api/onboarding-state/') {
+      const onboardingPath = path.join(os.homedir(), '.tspr', 'onboarding.json');
+      // Also honour ?onboarding=fresh query param for testing
+      const fresh = params.get('onboarding') === 'fresh';
+      if (fresh) {
+        sendJson(res, 200, { seen: false });
+        return;
+      }
+      try {
+        if (fs.existsSync(onboardingPath)) {
+          const data = JSON.parse(fs.readFileSync(onboardingPath, 'utf-8')) as { seen?: boolean };
+          sendJson(res, 200, { seen: data.seen === true });
+        } else {
+          sendJson(res, 200, { seen: false });
+        }
+      } catch {
+        sendJson(res, 200, { seen: false });
+      }
+      return;
+    }
+
+    // ── GET /api/screenshots/:runId/:filename ─────────────────────────────
+    const screenshotRouteMatch = urlPath.match(/^\/api\/screenshots\/([^/]+)\/(.+)$/);
+    if (screenshotRouteMatch) {
+      const runId = decodeURIComponent(screenshotRouteMatch[1]);
+      const fileName = decodeURIComponent(screenshotRouteMatch[2]);
+      const safeName = path.basename(fileName);
+      // Only PNG screenshots from the runs dir
+      if (!safeName.endsWith('.png')) {
+        sendJson(res, 400, { error: 'Only .png screenshots are served via this route' });
+        return;
+      }
+      const screenshotPath = path.join(os.homedir(), '.tspr', 'runs', runId, safeName);
+      try {
+        const content = fs.readFileSync(screenshotPath);
+        send(res, 200, 'image/png', content);
+      } catch {
+        sendNotFound(res, `Screenshot not found: ${safeName}`);
+      }
+      return;
+    }
+
     // ── / (home) ───────────────────────────────────────────────────────────
     if (urlPath === '/' || urlPath === '/index.html') {
       sendHtml(res, indexTemplate);
@@ -1146,6 +1209,7 @@ export async function startDashboard(opts?: DashboardOptions): Promise<Dashboard
   const compareTemplate = readUiFile('compare.html');
   const costTemplate = readUiFile('cost.html');
   const settingsTemplate = readUiFile('settings.html');
+  const onboardingTemplate = readUiFile('onboarding.html');
 
   const db = await openSqlite(dbFilePath);
 
@@ -1158,6 +1222,7 @@ export async function startDashboard(opts?: DashboardOptions): Promise<Dashboard
     compareTemplate,
     costTemplate,
     settingsTemplate,
+    onboardingTemplate,
     extraAllowedPaths,
   );
   const server = http.createServer(handler);
